@@ -7,7 +7,7 @@
 )]
 
 use defmt::info;
-use embassy_executor::Spawner;
+use embassy_executor::{Spawner, task};
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::timer::systimer::SystemTimer;
@@ -16,23 +16,73 @@ use esp_wifi::ble::controller::BleConnector;
 use panic_rtt_target as _;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::time::Rate;
+use ssd1306::I2CDisplayInterface;
 
 use embedded_graphics::{
-    mono_font::{MonoTextStyleBuilder},
+    mono_font::{MonoTextStyleBuilder, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
     text::Text,
 };
 use embedded_graphics::mono_font::ascii::FONT_6X9;
-use ssd1306::{prelude::*, Ssd1306, I2CDisplayInterface};
+use ssd1306::prelude::*;
+use ssd1306::Ssd1306;
 use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
 
 extern crate alloc;
 
+use alloc::format;
+use alloc::string::String;
+use esp_hal::Blocking;
+use ssd1306::mode::BufferedGraphicsMode;
+use ssd1306::prelude::I2CInterface;
+
+// Define a type alias for the display type
+type DisplayType = Ssd1306<I2CInterface<I2c<'static, Blocking>>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
+
+#[task]
+async fn display_task(
+    mut disp: DisplayType,
+    text_style: MonoTextStyle<'static, BinaryColor>
+) {
+    let mut counter = 0;
+    let x_offset = 30;
+    let y_offset = 22;
+
+    loop {
+
+        // Clear display first
+        disp.clear(BinaryColor::Off).unwrap();
+
+        // Draw the three lines of text with offsets
+        Text::new("COA", Point::new(x_offset, y_offset + 10), text_style)
+            .draw(&mut disp)
+            .unwrap();
+        Text::new("BLE", Point::new(x_offset, y_offset + 20), text_style)
+            .draw(&mut disp)
+            .unwrap();
+
+        // Create a string with the counter value
+        let counter_text: String = format!("Running: {}s", counter);
+
+        Text::new(&counter_text, Point::new(x_offset, y_offset + 30), text_style)
+            .draw(&mut disp)
+            .unwrap();
+
+        // Update the display
+        disp.flush().unwrap();
+
+        info!("Display updated with counter: {}", counter);
+        counter += 1;
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -42,7 +92,6 @@ async fn main(spawner: Spawner) {
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
-    let i2c_config = I2cConfig::default().with_frequency(Rate::from_khz(400));
 
     esp_alloc::heap_allocator!(size: 64 * 1024);
     // COEX needs more RAM - so we've added some more
@@ -74,9 +123,6 @@ async fn main(spawner: Spawner) {
         .into_buffered_graphics_mode();
     disp.init().unwrap();
 
-    // Define offsets similar to Arduino code
-    let x_offset = 30;
-    let y_offset = 22;
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
@@ -85,37 +131,13 @@ async fn main(spawner: Spawner) {
 
     // TODO: Spawn some tasks
     let _ = spawner;
-
-    // Counter variable (similar to Arduino code)
-    let mut counter = 0;
+    spawner.spawn(display_task(
+        disp,
+        text_style,
+    )).unwrap();
 
     loop {
-        // Clear display first
-        disp.clear(BinaryColor::Off).unwrap();
-
-        // Draw the three lines of text with offsets
-        Text::new("COA", Point::new(x_offset, y_offset + 10), text_style)
-            .draw(&mut disp)
-            .unwrap();
-        Text::new("BLE", Point::new(x_offset, y_offset + 20), text_style)
-            .draw(&mut disp)
-            .unwrap();
-
-        // Create a string with the counter value
-        use alloc::format;
-        use alloc::string::String;
-        let counter_text: String = format!("Running: {}s", counter);
-
-        Text::new(&counter_text, Point::new(x_offset, y_offset + 30), text_style)
-            .draw(&mut disp)
-            .unwrap();
-
-        // Update the display
-        disp.flush().unwrap();
-
-        info!("Display updated with counter: {}", counter);
-        counter += 1;
-        Timer::after(Duration::from_secs(1)).await;
+        Timer::after(Duration::from_secs(60)).await;
     }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
