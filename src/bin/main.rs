@@ -55,24 +55,11 @@ async fn display_task(
     let y_offset = 22;
 
     loop {
-
-        // Clear display first
-        disp.clear(BinaryColor::Off).unwrap();
-
-        // Draw the three lines of text with offsets
-        Text::new("COA", Point::new(x_offset, y_offset + 10), text_style)
-            .draw(&mut disp)
-            .unwrap();
-        Text::new("BLE", Point::new(x_offset, y_offset + 20), text_style)
-            .draw(&mut disp)
-            .unwrap();
-
-        // Create a string with the counter value
-        let counter_text: String = format!("Running: {}s", counter);
-
-        Text::new(&counter_text, Point::new(x_offset, y_offset + 30), text_style)
-            .draw(&mut disp)
-            .unwrap();
+        // Update the display using the common function
+        if let Err(_) = coa_gatt_bleps_c3::display::update_display(&mut disp, counter, x_offset, y_offset, text_style) {
+            info!("Error updating display");
+            continue;
+        }
 
         // Update the display
         disp.flush().unwrap();
@@ -129,14 +116,13 @@ async fn main(spawner: Spawner) {
         .text_color(BinaryColor::On)
         .build();
 
-    // TODO: Spawn some tasks
-    let _ = spawner;
-    spawner.spawn(display_task(
+    spawner.must_spawn(display_task(
         disp,
         text_style,
-    )).unwrap();
+    ));;
 
     loop {
+        info!("Running main loop...");
         Timer::after(Duration::from_secs(60)).await;
     }
 
