@@ -31,6 +31,8 @@ cargo run
 
 ```
 just monitor
+#or 
+probe-rs attach --chip esp32c3 --probe 303a:1001:50:78:7D:B9:63:C0 target/riscv32imc-unknown-none-elf/debug/coa_gatt_bleps_c3
 ```
 
 ## Notes

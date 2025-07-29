@@ -6,7 +6,7 @@
     holding buffers for the duration of a data transfer."
 )]
 
-use defmt::info;
+use defmt::{info, warn};
 use embassy_executor::{Spawner, task};
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
@@ -21,8 +21,6 @@ use ssd1306::I2CDisplayInterface;
 use embedded_graphics::{
     mono_font::{MonoTextStyleBuilder, MonoTextStyle},
     pixelcolor::BinaryColor,
-    prelude::*,
-    text::Text,
 };
 use embedded_graphics::mono_font::ascii::FONT_6X9;
 use ssd1306::prelude::*;
@@ -32,7 +30,6 @@ use ssd1306::size::DisplaySize128x64;
 
 extern crate alloc;
 
-use alloc::format;
 use esp_hal::Blocking;
 use ssd1306::mode::BufferedGraphicsMode;
 use ssd1306::prelude::I2CInterface;
@@ -56,12 +53,15 @@ async fn display_task(
     loop {
         // Update the display using the common function
         if let Err(_) = coa_gatt_bleps_c3::display::update_display(&mut disp, counter, x_offset, y_offset, text_style) {
-            info!("Error updating display");
+            warn!("Error updating display");
             continue;
         }
 
-        // Update the display
-        disp.flush().unwrap();
+        if disp.flush().is_err() {
+            warn!("Failed to flush display");
+            continue;
+        }
+;
 
         info!("Display updated with counter: {}", counter);
         counter += 1;
@@ -79,7 +79,8 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    esp_alloc::heap_allocator!(size: 64 * 1024);
+    // esp_alloc::heap_allocator!(size: 64 * 1024);
+    esp_alloc::heap_allocator!(size: 192 * 1024);
     // COEX needs more RAM - so we've added some more
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
 
@@ -100,14 +101,17 @@ async fn main(spawner: Spawner) {
         peripherals.I2C0,
         I2cConfig::default().with_frequency(Rate::from_khz(400)),
     )
-        .unwrap()
+        .expect("Failed to create I2C instance")
         .with_sda(peripherals.GPIO5)
         .with_scl(peripherals.GPIO6);
 
     let interface = I2CDisplayInterface::new(i2c);
     let mut disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
-    disp.init().unwrap();
+
+    if disp.init().is_err() {
+        warn!("Failed to initialize display");
+    }
 
 
     let text_style = MonoTextStyleBuilder::new()

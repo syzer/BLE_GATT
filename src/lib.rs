@@ -103,12 +103,22 @@ pub mod display {
         // Clear display first
         display.clear(BinaryColor::Off)?;
 
+        // Determine which version of the speech bubble to display based on counter % 5
+        let (first_line, second_line, third_line) = match counter % 5 {
+            1 => ("B", "L", "E"), // 1st iteration: "BLE"
+            2 => (" ", " ", " "),    // 2nd iteration: "" (empty)
+            3 => ("B", " ", " "),   // 3rd iteration: "B"
+            4 => ("B", "L", " "),  // 4th iteration: "BL"
+            0 => ("B", "L", "E"), // 5th iteration: "BLE" (same as 1st)
+            _ => unreachable!(),
+        };
+
         let cow_art = [
             r"       ",
             r"  ^__^",
-            r"B (oo)\____",
-            r"L (__)\       )\/\",
-            r"E     ||--w ||",
+            &format!("{} (oo)\\____", first_line),
+            &format!("{} (__)\\       )\\/\\", second_line),
+            &format!("{}     ||--w ||", third_line),
             r"      ||       ||",
         ];
 
