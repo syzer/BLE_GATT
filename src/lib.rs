@@ -2,19 +2,16 @@
 
 extern crate alloc;
 
-#[cfg(test)]
 pub mod mock {
+    use alloc::vec;
     use alloc::vec::Vec;
     use core::cell::RefCell;
     use embedded_graphics::{
         pixelcolor::BinaryColor,
         prelude::*,
+        geometry::OriginDimensions,
     };
-    use ssd1306::{
-        mode::BufferedGraphicsMode,
-        prelude::*,
-        size::DisplaySize128x64,
-    };
+    // No imports needed from ssd1306
 
     // Mock implementation of the display
     pub struct MockDisplay {
@@ -47,11 +44,17 @@ pub mod mock {
         }
     }
 
+    impl OriginDimensions for MockDisplay {
+        fn size(&self) -> Size {
+            Size::new(self.width, self.height)
+        }
+    }
+
     impl DrawTarget for MockDisplay {
         type Color = BinaryColor;
         type Error = ();
 
-        fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+        fn draw_iter<I>(&mut self, _pixels: I) -> Result<(), Self::Error>
         where
             I: IntoIterator<Item = Pixel<Self::Color>>,
         {
@@ -61,11 +64,12 @@ pub mod mock {
         }
 
         fn clear(&mut self, _color: Self::Color) -> Result<(), Self::Error> {
-            self.clear()
-        }
-
-        fn dimensions(&self) -> Size {
-            Size::new(self.width, self.height)
+            // Clear the buffer manually instead of calling self.clear()
+            let mut buffer = self.buffer.borrow_mut();
+            for byte in buffer.iter_mut() {
+                *byte = 0;
+            }
+            Ok(())
         }
     }
 

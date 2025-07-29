@@ -158,12 +158,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
-name = "coa_gatt_bleps_c3"
+name = "coa_gatt"
 version = "0.1.0"
 dependencies = [
  "bleps",
  "critical-section",
  "defmt 1.0.1",
+ "defmt-rtt",
  "embassy-executor",
  "embassy-net",
  "embassy-time",
@@ -175,6 +176,7 @@ dependencies = [
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-hal-embassy",
+ "esp-rom-sys",
  "esp-wifi",
  "panic-rtt-target",
  "rtt-target",
@@ -273,6 +275,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "defmt-rtt"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6eca0aae8aa2cf8333200ecbd236274697bc0a394765c858b3d9372eb1abcfa"
+dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
 ]
 
 [[package]]
@@ -780,6 +792,7 @@ checksum = "fbece384edaf0d1eabfa45afa96d910634d4158638ef983b2d419a8dec832246"
 dependencies = [
  "document-features",
  "litrs 0.4.2",
+ "object",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -1279,6 +1292,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "object"
+version = "0.36.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

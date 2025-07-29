@@ -21,6 +21,7 @@ use ssd1306::I2CDisplayInterface;
 use embedded_graphics::{
     mono_font::{MonoTextStyleBuilder, MonoTextStyle},
     pixelcolor::BinaryColor,
+    // prelude::*,
 };
 use embedded_graphics::mono_font::ascii::FONT_6X9;
 use ssd1306::prelude::*;
@@ -34,8 +35,17 @@ use esp_hal::Blocking;
 use ssd1306::mode::BufferedGraphicsMode;
 use ssd1306::prelude::I2CInterface;
 
+use coa_gatt::display::update_display;
+use coa_gatt::mock::{MockDisplayType, create_mock_display};
+
 // Define a type alias for the display type
 type DisplayType = Ssd1306<I2CInterface<I2c<'static, Blocking>>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+
+// Define a trait object type that can be either a real display or a mock display
+enum DisplayWrapper {
+    Real(DisplayType),
+    Mock(MockDisplayType),
+}
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -43,7 +53,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 #[task]
 async fn display_task(
-    mut disp: DisplayType,
+    mut disp: DisplayWrapper,
     text_style: MonoTextStyle<'static, BinaryColor>
 ) {
     let mut counter = 0;
@@ -52,16 +62,30 @@ async fn display_task(
 
     loop {
         // Update the display using the common function
-        if let Err(_) = coa_gatt_bleps_c3::display::update_display(&mut disp, counter, x_offset, y_offset, text_style) {
-            warn!("Error updating display");
-            continue;
-        }
+        match &mut disp {
+            DisplayWrapper::Real(real_disp) => {
+                if let Err(_) = update_display(real_disp, counter, x_offset, y_offset, text_style) {
+                    warn!("Error updating real display");
+                    continue;
+                }
 
-        if disp.flush().is_err() {
-            warn!("Failed to flush display");
-            continue;
+                if real_disp.flush().is_err() {
+                    warn!("Failed to flush real display");
+                    continue;
+                }
+            },
+            DisplayWrapper::Mock(mock_disp) => {
+                if let Err(_) = update_display(mock_disp, counter, x_offset, y_offset, text_style) {
+                    warn!("Error updating mock display");
+                    continue;
+                }
+
+                if mock_disp.flush().is_err() {
+                    warn!("Failed to flush mock display");
+                    continue;
+                }
+            }
         }
-;
 
         info!("Display updated with counter: {}", counter);
         counter += 1;
@@ -106,13 +130,16 @@ async fn main(spawner: Spawner) {
         .with_scl(peripherals.GPIO6);
 
     let interface = I2CDisplayInterface::new(i2c);
-    let mut disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+    let mut real_disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
 
-    if disp.init().is_err() {
-        warn!("Failed to initialize display");
-    }
-
+    // Try to initialize the real display, use mock display if it fails
+    let display_wrapper = if real_disp.init().is_err() {
+        warn!("Failed to initialize display, using mock display instead");
+        DisplayWrapper::Mock(create_mock_display())
+    } else {
+        DisplayWrapper::Real(real_disp)
+    };
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
@@ -120,7 +147,7 @@ async fn main(spawner: Spawner) {
         .build();
 
     spawner.must_spawn(display_task(
-        disp,
+        display_wrapper,
         text_style,
     ));
 
