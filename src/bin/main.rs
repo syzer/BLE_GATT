@@ -33,7 +33,6 @@ use ssd1306::size::DisplaySize128x64;
 extern crate alloc;
 
 use alloc::format;
-use alloc::string::String;
 use esp_hal::Blocking;
 use ssd1306::mode::BufferedGraphicsMode;
 use ssd1306::prelude::I2CInterface;
@@ -119,7 +118,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(display_task(
         disp,
         text_style,
-    ));;
+    ));
 
     loop {
         info!("Running main loop...");

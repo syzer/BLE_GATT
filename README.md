@@ -2,6 +2,8 @@
 
 This project is for the ESP32-C3 microcontroller with an SSD1306 OLED display. It uses Rust and the Embassy async runtime.
 
+Power draft is 0.32W baseline to 0.45W with the transmition on
+
 ## Build
 
 ```

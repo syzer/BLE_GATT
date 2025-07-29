@@ -109,12 +109,20 @@ pub mod display {
             r"B (oo)\____",
             r"L (__)\       )\/\",
             r"E     ||--w ||",
-            r"       ||       ||",
+            r"      ||       ||",
         ];
 
         // Draw the cow ASCII art with smaller vertical spacing
         for (i, line) in cow_art.iter().enumerate() {
-            Text::new(line, Point::new(x_offset, y_offset + (i as i32 * 7)), text_style)
+            // If this is the line with the eyes (index 2) and counter is divisible by 10,
+            // replace "(oo)" with "(X.)"
+            let display_line = if i == 2 && counter % 10 == 0 {
+                "B (X.)\\____"
+            } else {
+                line
+            };
+
+            Text::new(display_line, Point::new(x_offset, y_offset + (i as i32 * 7)), text_style)
                 .draw(display)?;
         }
 

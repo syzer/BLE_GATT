@@ -57,10 +57,10 @@ mod tests {
         // Create a test that verifies the text formatting logic
         // without actually drawing to a display
 
-        // Simply log that we would display text at these coordinates
-        info!("Would display 'COA' at ({}, {})", x_offset, y_offset + 10);
-        info!("Would display 'BLE' at ({}, {})", x_offset, y_offset + 20);
-        info!("Would display counter at ({}, {})", x_offset, y_offset + 30);
+        // Simply log that we would display cow ASCII art at these coordinates
+        info!("Would display cow ASCII art starting at ({}, {})", x_offset, y_offset);
+        info!("Would display lines of cow ASCII art with BLE speech bubble at various y-offsets");
+        info!("Would display 'Moo: Xs' counter at ({}, {})", x_offset, y_offset + 64);
 
         info!("OLED text display test passed");
     }
@@ -70,9 +70,16 @@ mod tests {
         info!("Testing counter display functionality (simulated)");
 
         // Test the counter display for multiple values
-        for counter in 0..3 {
+        for counter in 0..12 {
             // Log what would be displayed for each counter value
-            info!("Would display counter value: {}", counter);
+            info!("Would display 'Moo: {}s' counter value", counter);
+
+            // Check if counter is divisible by 10 to test the cow's eyes changing
+            if counter % 10 == 0 && counter > 0 {
+                info!("Counter is divisible by 10, would display cow with '(X.)' eyes");
+            } else {
+                info!("Would display cow with normal '(oo)' eyes");
+            }
 
             // Simulate a short delay between updates
             embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
