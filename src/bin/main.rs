@@ -73,33 +73,48 @@ async fn main(spawner: Spawner) {
     let mut disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
     disp.init().unwrap();
-    disp.flush().unwrap();
 
-    // Clear display first
-    disp.clear(BinaryColor::Off).unwrap();
+    // Define offsets similar to Arduino code
+    let x_offset = 30;
+    let y_offset = 22;
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
         .text_color(BinaryColor::On)
         .build();
 
-    // Draw the three lines of text
-    Text::new("Julian", Point::new(0, 15), text_style)
-        .draw(&mut disp)
-        .unwrap();
-    Text::new("Weitz", Point::new(0, 30), text_style)
-        .draw(&mut disp)
-        .unwrap();
-    Text::new("Sucks", Point::new(0, 45), text_style)
-        .draw(&mut disp)
-        .unwrap();
-    disp.flush().unwrap();
-
     // TODO: Spawn some tasks
     let _ = spawner;
 
+    // Counter variable (similar to Arduino code)
+    let mut counter = 0;
+
     loop {
-        info!("Hello world!");
+        // Clear display first
+        disp.clear(BinaryColor::Off).unwrap();
+
+        // Draw the three lines of text with offsets
+        Text::new("COA", Point::new(x_offset, y_offset + 10), text_style)
+            .draw(&mut disp)
+            .unwrap();
+        Text::new("BLE", Point::new(x_offset, y_offset + 20), text_style)
+            .draw(&mut disp)
+            .unwrap();
+
+        // Create a string with the counter value
+        use alloc::format;
+        use alloc::string::String;
+        let counter_text: String = format!("Running: {}s", counter);
+
+        Text::new(&counter_text, Point::new(x_offset, y_offset + 30), text_style)
+            .draw(&mut disp)
+            .unwrap();
+
+        // Update the display
+        disp.flush().unwrap();
+
+        info!("Display updated with counter: {}", counter);
+        counter += 1;
         Timer::after(Duration::from_secs(1)).await;
     }
 
