@@ -2,7 +2,16 @@
 
 This project is for the ESP32-C3 microcontroller with an SSD1306 OLED display. It uses Rust and the Embassy async runtime.
 
-Power draft is 0.32W baseline to 0.45W with the transmition on
+Power draft is 0.32W baseline to 0.52W with the BLE transmission.
+
+ _____
+< BLE >
+ -----
+        \   ^__^
+         \  (oo)\_______
+            (__)\       )\/\
+                ||----w |
+                ||     ||
 
 ## Build
 
@@ -13,16 +22,15 @@ cargo build
 ## Flash (replace <PORT> with your device port)
 
 ```
-cargo run --release
-# or use espflash if installed:
-espflash /dev/<PORT> target/riscv32imc-unknown-none-elf/release/coa-gatt-bleps-c3
+just 
+# or 
+cargo run
 ```
 
 ## Monitor Serial Output
 
 ```
-cargo install espflash # if not already installed
-espflash monitor /dev/<PORT>
+just monitor
 ```
 
 ## Notes
