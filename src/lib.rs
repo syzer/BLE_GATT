@@ -103,16 +103,24 @@ pub mod display {
         // Clear display first
         display.clear(BinaryColor::Off)?;
 
-        // Draw the three lines of text with offsets
-        Text::new("COA", Point::new(x_offset, y_offset + 10), text_style)
-            .draw(display)?;
-        Text::new("BLE", Point::new(x_offset, y_offset + 20), text_style)
-            .draw(display)?;
+        let cow_art = [
+            r"       ",
+            r"  ^__^",
+            r"B (oo)\____",
+            r"L (__)\       )\/\",
+            r"E     ||--w ||",
+            r"       ||       ||",
+        ];
 
-        // Create a string with the counter value
-        let counter_text: String = format!("Running: {}s", counter);
+        // Draw the cow ASCII art with smaller vertical spacing
+        for (i, line) in cow_art.iter().enumerate() {
+            Text::new(line, Point::new(x_offset, y_offset + (i as i32 * 7)), text_style)
+                .draw(display)?;
+        }
 
-        Text::new(&counter_text, Point::new(x_offset, y_offset + 30), text_style)
+        // Create a string with the counter value at the bottom
+        let counter_text: String = format!("Moo: {}s", counter);
+        Text::new(&counter_text, Point::new(x_offset, y_offset + 64), text_style)
             .draw(display)?;
 
         Ok(())
