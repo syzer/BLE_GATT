@@ -33,6 +33,21 @@ monitor-c6:
 # For backward compatibility
 monitor: monitor-c3
 
+# Monitor release build for ESP32-C3 with defmt-print
+monitor-release-c3:
+    probe-rs run --chip esp32c3 --connect-under-reset \
+      target/riscv32imc-unknown-none-elf/release/coa_gatt | \
+      defmt-print -e target/riscv32imc-unknown-none-elf/release/coa_gatt
+
+# Monitor release build for ESP32-C6 with defmt-print
+monitor-release-c6:
+    probe-rs run --chip esp32c6 --connect-under-reset \
+      target/riscv32imac-unknown-none-elf/release/coa_gatt | \
+      defmt-print -e target/riscv32imac-unknown-none-elf/release/coa_gatt
+
+# For backward compatibility
+monitor-release: monitor-release-c3
+
 reset-c3:
     @probe_id=$(just list-probes | grep '\[0\]' | sed -E 's/.* -- ([^ ]+) .*/\1/'); \
     pkill probe-rs; \

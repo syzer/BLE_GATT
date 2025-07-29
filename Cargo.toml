@@ -106,3 +106,4 @@ incremental      = false
 lto              = 'fat'
 opt-level        = 's'
 overflow-checks  = false
+split-debuginfo = "packed"
