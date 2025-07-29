@@ -6,6 +6,9 @@ This project is for the ESP32-C3 and ESP32-C6 microcontrollers with an SSD1306 O
 Power draft is 0.32W baseline to 0.52W with the BLE transmission in debug mode
 and 0.45W with release mode
 
+## ESP32C6
+Power draft is 0.37W and 0.38W with the BLE transmission in debug mode
+
 < BLE >
  -----
         \   ^__^
@@ -19,13 +22,13 @@ and 0.45W with release mode
 ### Default Build (ESP32-C3)
 
 ```
-cargo build
+cargo run-c3
 ```
 
 ### Build for ESP32-C6
 
 ```
-cargo build --no-default-features --features esp32c6
+cargo run-c6
 ```
 
 ### Switching Target Configuration
@@ -76,7 +79,9 @@ Note: The appropriate runner will be automatically selected based on the feature
 
 ## Monitor Serial Output
 
-### For ESP32-C3
+### Debug Builds
+
+#### For ESP32-C3
 
 ```
 just monitor-c3
@@ -84,13 +89,35 @@ just monitor-c3
 probe-rs attach --chip esp32c3 --probe <PROBE_ID> target/riscv32imc-unknown-none-elf/debug/coa_gatt_bleps_c3
 ```
 
-### For ESP32-C6
+#### For ESP32-C6
 
 ```
 just monitor-c6
 # or 
 probe-rs attach --chip esp32c6 --probe <PROBE_ID> target/riscv32imc-unknown-none-elf/debug/coa_gatt_bleps_c3
 ```
+
+### Release Builds
+
+For monitoring release builds with proper defmt log formatting:
+
+#### For ESP32-C3
+
+```
+just monitor-release-c3
+# or simply
+just monitor-release
+```
+
+#### For ESP32-C6
+
+```
+just monitor-release-c6
+```
+
+These commands will run the release build and pipe the output through `defmt-print` to properly format the defmt log messages.
+
+### Probe Information
 
 You can get your probe ID by running:
 
