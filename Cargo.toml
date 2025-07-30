@@ -97,6 +97,9 @@ embedded-test = { version = "0.6.0", features = [
     "external-executor",
 ] }
 
+[build-dependencies]
+dotenvy = "0.15.7"
+
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization

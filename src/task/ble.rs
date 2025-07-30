@@ -6,6 +6,9 @@ use trouble_host::prelude::*;
 use defmt::info;
 use defmt::warn;
 
+// Include the generated file with MAC address
+include!(concat!(env!("OUT_DIR"), "/mac_address.rs"));
+
 /// Max number of connections
 const CONNECTIONS_MAX: usize = 1;
 
@@ -19,7 +22,7 @@ struct Server {
 }
 
 /// Battery service
-#[gatt_service(uuid = service::BATTERY)]
+#[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
 struct BatteryService {
     /// Battery Level
     #[descriptor(uuid = descriptors::VALID_RANGE, read, value = [0, 100])]
@@ -35,9 +38,8 @@ pub async fn run<C>(controller: C)
 where
     C: Controller,
 {
-    // Using a fixed "random" address can be useful for testing. In real scenarios, one would
-    // use e.g. the MAC 6 byte array as the address (how to get that varies by the platform).
-    let address: Address = Address::random([0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff]);
+    // Use MAC address from the generated constant
+    let address: Address = Address::random(MAC_ADDRESS);
     info!("Our address = {:?}", address);
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
