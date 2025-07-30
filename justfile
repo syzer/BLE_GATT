@@ -69,7 +69,6 @@ release-c3:
 # Build, flash, and run release version for ESP32-C6
 release-c6:
     cargo build --release --no-default-features --features esp32c6 --target riscv32imac-unknown-none-elf
-    probe-rs flash --chip=esp32c6 --elf target/riscv32imac-unknown-none-elf/release/coa_gatt
     probe-rs run --chip=esp32c6 --preverify --always-print-stacktrace --no-location --catch-hardfault target/riscv32imac-unknown-none-elf/release/coa_gatt
 
 # Estimate flash usage of the debug build
