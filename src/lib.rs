@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-pub mod ble;
 pub mod task;
 
 pub mod mock {
