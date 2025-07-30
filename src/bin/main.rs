@@ -7,27 +7,27 @@
 )]
 
 use defmt::{info, warn};
-use embassy_executor::{Spawner, task};
+use embassy_executor::{task, Spawner};
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
+use esp_hal::i2c::master::{Config as I2cConfig, I2c};
+use esp_hal::time::Rate;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_wifi::ble::controller::BleConnector;
 use panic_rtt_target as _;
-use esp_hal::i2c::master::{Config as I2cConfig, I2c};
-use esp_hal::time::Rate;
 use ssd1306::I2CDisplayInterface;
 
+use embedded_graphics::mono_font::ascii::FONT_6X9;
 use embedded_graphics::{
-    mono_font::{MonoTextStyleBuilder, MonoTextStyle},
+    mono_font::{MonoTextStyle, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     // prelude::*,
 };
-use embedded_graphics::mono_font::ascii::FONT_6X9;
 use ssd1306::prelude::*;
-use ssd1306::Ssd1306;
 use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
+use ssd1306::Ssd1306;
 
 extern crate alloc;
 
@@ -36,10 +36,14 @@ use ssd1306::mode::BufferedGraphicsMode;
 use ssd1306::prelude::I2CInterface;
 
 use coa_gatt::display::update_display;
-use coa_gatt::mock::{MockDisplayType, create_mock_display};
+use coa_gatt::mock::{create_mock_display, MockDisplayType};
 
 // Define a type alias for the display type
-type DisplayType = Ssd1306<I2CInterface<I2c<'static, Blocking>>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+type DisplayType = Ssd1306<
+    I2CInterface<I2c<'static, Blocking>>,
+    DisplaySize128x64,
+    BufferedGraphicsMode<DisplaySize128x64>,
+>;
 
 // Define a trait object type that can be either a real display or a mock display
 enum DisplayWrapper {
@@ -52,10 +56,7 @@ enum DisplayWrapper {
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[task]
-async fn display_task(
-    mut disp: DisplayWrapper,
-    text_style: MonoTextStyle<'static, BinaryColor>
-) {
+async fn display_task(mut disp: DisplayWrapper, text_style: MonoTextStyle<'static, BinaryColor>) {
     let mut counter = 0;
     let x_offset = 30;
     let y_offset = 22;
@@ -73,7 +74,7 @@ async fn display_task(
                     warn!("Failed to flush real display");
                     continue;
                 }
-            },
+            }
             DisplayWrapper::Mock(mock_disp) => {
                 if let Err(_) = update_display(mock_disp, counter, x_offset, y_offset, text_style) {
                     warn!("Error updating mock display");
@@ -92,7 +93,6 @@ async fn display_task(
         Timer::after(Duration::from_secs(1)).await;
     }
 }
-
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -125,9 +125,9 @@ async fn main(spawner: Spawner) {
         peripherals.I2C0,
         I2cConfig::default().with_frequency(Rate::from_khz(400)),
     )
-        .expect("Failed to create I2C instance")
-        .with_sda(peripherals.GPIO5)
-        .with_scl(peripherals.GPIO6);
+    .expect("Failed to create I2C instance")
+    .with_sda(peripherals.GPIO5)
+    .with_scl(peripherals.GPIO6);
 
     let interface = I2CDisplayInterface::new(i2c);
     let mut real_disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
@@ -146,10 +146,7 @@ async fn main(spawner: Spawner) {
         .text_color(BinaryColor::On)
         .build();
 
-    spawner.must_spawn(display_task(
-        display_wrapper,
-        text_style,
-    ));
+    spawner.must_spawn(display_task(display_wrapper, text_style));
 
     loop {
         info!("Running main loop...");
