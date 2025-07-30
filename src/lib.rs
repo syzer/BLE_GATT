@@ -2,6 +2,8 @@
 
 extern crate alloc;
 
+pub mod task;
+
 pub mod mock {
     use alloc::vec;
     use alloc::vec::Vec;

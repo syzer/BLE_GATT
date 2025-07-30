@@ -6,6 +6,7 @@ default:
     just run-c3
 
 # Run on ESP32-C3
+#    probe-rs run --chip=esp32c3 --format defmt --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/debug/coa_gatt
 run-c3:
     cargo build --features esp32c3 --target riscv32imc-unknown-none-elf
     probe-rs run --chip=esp32c3 --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/debug/coa_gatt
@@ -22,7 +23,7 @@ list-probes:
 # Automatically attach to the first detected ESP JTAG probe and filter INFO lines
 monitor-c3:
     @probe_id=$(just list-probes | grep '\[0\]' | sed -E 's/.* -- ([^ ]+) .*/\1/'); \
-    probe-rs attach --chip esp32c3 --probe $probe_id --connect-under-reset \
+    probe-rs attach --chip esp32c3 --probe $probe_id --format defmt --connect-under-reset \
       target/riscv32imc-unknown-none-elf/debug/coa_gatt | grep INFO
 
 monitor-c6:
@@ -35,7 +36,7 @@ monitor: monitor-c3
 
 # Monitor release build for ESP32-C3 with defmt-print
 monitor-release-c3:
-    probe-rs run --chip esp32c3 --connect-under-reset \
+    probe-rs run --chip esp32c3 --format defmt --connect-under-reset \
       target/riscv32imc-unknown-none-elf/release/coa_gatt | \
       defmt-print -e target/riscv32imc-unknown-none-elf/release/coa_gatt
 
@@ -51,7 +52,7 @@ monitor-release: monitor-release-c3
 reset-c3:
     @probe_id=$(just list-probes | grep '\[0\]' | sed -E 's/.* -- ([^ ]+) .*/\1/'); \
     pkill probe-rs; \
-    probe-rs reset --chip esp32c3 --probe $probe_id --connect-under-reset
+    probe-rs reset --chip esp32c3 --probe $probe_id  --connect-under-reset
 
 reset-c6:
     @probe_id=$(just list-probes | grep '\[0\]' | sed -E 's/.* -- ([^ ]+) .*/\1/'); \
@@ -64,7 +65,7 @@ reset: reset-c3
 # Build, flash, and run release version for ESP32-C3
 release-c3:
     cargo build --release --features esp32c3 --target riscv32imc-unknown-none-elf
-    probe-rs run --chip=esp32c3 --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/release/coa_gatt
+    probe-rs run --chip=esp32c3 --format defmt --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/release/coa_gatt
 
 # Build, flash, and run release version for ESP32-C6
 release-c6:
