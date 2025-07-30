@@ -27,6 +27,7 @@ use trouble_host::prelude::ExternalController;
 use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
 
 extern crate alloc;
+use alloc::boxed::Box;
 
 use coa_gatt::mock::create_mock_display;
 use coa_gatt::task::{ble, display_task, DisplayWrapper};
@@ -57,11 +58,14 @@ async fn main(spawner: Spawner) {
 
     let rng = esp_hal::rng::Rng::new(peripherals.RNG);
     let timer1 = TimerGroup::new(peripherals.TIMG0);
-    let wifi_init =
-        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller");
-    let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
+    let wifi_init = esp_wifi::init(timer1.timer0, rng)
+        .expect("Failed to initialize WIFI/BLE controller");
+    // Make it live for 'static by leaking the box
+    let wifi_init = Box::leak(Box::new(wifi_init));// bit shit but here we go
+    let (mut _wifi_controller, _interfaces) =
+        esp_wifi::wifi::new(wifi_init, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
-    let connector = BleConnector::new(&wifi_init, peripherals.BT);
+    let connector = BleConnector::new(wifi_init, peripherals.BT);
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -91,6 +95,7 @@ async fn main(spawner: Spawner) {
         .must_spawn(temp_task(tsens));
 
     info!("Running BLE...");
-    // TODO as task
-    ble::run(controller).await;
+    // TODO as task and remove spawner
+    ble::run(controller, &spawner).await;
+
 }

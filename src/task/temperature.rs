@@ -1,4 +1,4 @@
-use defmt::info;
+use defmt::debug;
 use embassy_time::Timer;
 use esp_hal::tsens::{TemperatureSensor};
 
@@ -10,7 +10,7 @@ pub async fn temp_task(tsens: TemperatureSensor<'static>) {
     loop {
         let t = tsens.get_temperature();
         let c = t.to_celsius();
-        info!("chip temperature = {:?} °C", c);
+        debug!("chip temperature = {:?} °C", c);
         Timer::after_secs(2).await;
     }
 }

@@ -65,7 +65,7 @@ reset: reset-c3
 # Build, flash, and run release version for ESP32-C3
 release-c3:
     cargo build --release --features esp32c3 --target riscv32imc-unknown-none-elf
-    probe-rs run --chip=esp32c3 --format defmt --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/release/coa_gatt
+    probe-rs run --chip=esp32c3 --preverify --always-print-stacktrace --no-location --catch-hardfault --connect-under-reset target/riscv32imc-unknown-none-elf/release/coa_gatt
 
 # Build, flash, and run release version for ESP32-C6
 release-c6:

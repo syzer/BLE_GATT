@@ -1,18 +1,23 @@
-use embassy_futures::join::join;
 use embassy_futures::select::select;
+use embassy_futures::join::join;
 use embassy_time::Timer;
 use trouble_host::prelude::*;
 
+use embassy_executor::Spawner;
+use embassy_executor::task;
+use alloc::boxed::Box;
+
 use defmt::info;
 use defmt::warn;
+use defmt::debug;
 
 const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
 
 /// Max number of connections
-const CONNECTIONS_MAX: usize = 1;
+const CONNECTIONS_MAX: usize = 2;
 
 /// Max number of L2CAP channels.
-const L2CAP_CHANNELS_MAX: usize = 2; // Signal + att
+const L2CAP_CHANNELS_MAX: usize = 3; // Signal + att
 
 const SERVICE_UUID: [u8; 16] = [
     0xFD, 0x2B, 0x44, 0x48, 0xAA, 0x0F, 0x4A, 0x15,
@@ -20,35 +25,40 @@ const SERVICE_UUID: [u8; 16] = [
 ];
 
 // GATT Server definition
-#[gatt_server]
+#[gatt_server(connections_max = CONNECTIONS_MAX)]
 struct Server {
     cow_service: CowService,
 }
 
 /// Cow service
-#[gatt_service(uuid = "00000000-0000-0000-0000-fd2bcccb0000")]
+// #[gatt_service(uuid = "00000000-0000-0000-0000-fd2bcccb0000")]
+#[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
 struct CowService {
-    /// Temperature in °C (int8)
+    /// Temperature in °C (int8) // Temperature
+    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0001", name = "Temperature", read, value = "Temperature")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
     temperature: i8,
 
-    /// Outbound ticket payloads (device → phone)
+    /// Outbound ticket payloads (device → phone) // GetTickets
+    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "GetTickets", read, value = "GetTickets")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000a", read, notify, value = [0; 20])]
     get_tickets: [u8; 20],
 
-    /// Inbound ticket payloads (phone → device)
+    /// Inbound ticket payloads (phone → device) // PostTickets
+    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "PostTickets", read, value = "PostTickets")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", write)]
     post_tickets: [u8; 20],
 
-    /// Login credentials sent from phone
+    /// Login credentials sent from phone // PostLogin
+    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0006", name = "PostLogin", read, value = "PostLogin")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", write)]
     post_login: [u8; 20],
 }
 
 /// Run the BLE stack.
-pub async fn run<C>(controller: C)
+pub async fn run<C>(controller: C, _spawner: &Spawner)
 where
-    C: Controller,
+    C: Controller + 'static,
 {
     let parts = MAC_ADDRESS.split(":");
     let hexes: heapless::Vec<u8, 6> = parts.map(|f| u8::from_str_radix(f, 16).unwrap()).collect();
@@ -56,76 +66,76 @@ where
     let address = Address::random(hexes.into_array().unwrap());
     warn!("MAC address = {:?}", address);
 
-    let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
-        HostResources::new();
-    let stack = trouble_host::new(controller, &mut resources).set_random_address(address);
+    // Put the HostResources in a Box and leak it so it is &'static mut
+    let resources: &'static mut HostResources<
+        DefaultPacketPool,
+        CONNECTIONS_MAX,
+        L2CAP_CHANNELS_MAX,
+    > = Box::leak(Box::new(HostResources::new()));
+
+    // Stack builder must also live for 'static because GattConnection
+    // holds references into it.
+    let stack_builder = trouble_host::new(controller, resources).set_random_address(address);
+    let stack_builder: &'static mut _ = Box::leak(Box::new(stack_builder));
+
     let Host {
         mut peripheral,
         runner,
         ..
-    } = stack.build();
+    } = stack_builder.build();
 
     info!("Starting advertising and GATT service");
     let server = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
         name: "COW GATT",
-        appearance: &appearance::power_device::GENERIC_POWER_DEVICE,
+        appearance: &appearance::access_control::GENERIC_ACCESS_CONTROL,
     }))
     .unwrap();
 
-    let _ = join(ble_task(runner), async {
+    // Leak the server so spawned tasks can hold a 'static reference to it
+    let server: &'static Server = Box::leak(Box::new(server));
+
+    #[task(pool_size = CONNECTIONS_MAX)]
+    async fn connection_task(
+        server: &'static Server<'static>,
+        conn: GattConnection<'static, 'static, DefaultPacketPool>,
+    ) {
+        select(
+            gatt_events_task(server, &conn),
+            custom_task(server, &conn),
+        )
+        .await;
+    }
+
+    let adv_loop = async {
         loop {
-            match advertise("COW Example", &mut peripheral, &server).await {
+            match advertise("COW GATT", &mut peripheral, server).await {
                 Ok(conn) => {
-                    // set up tasks when the connection is established to a central, so they don't run when no one is connected.
-                    let a = gatt_events_task(&server, &conn);
-                    let b = custom_task(&server, &conn, &stack);
-                    // run until any task ends (usually because the connection has been closed),
-                    // then return to advertising state.
-                    select(a, b).await;
+                    _spawner.must_spawn(connection_task(server, conn));
                 }
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(feature = "defmt")]
-                    let e = defmt::Debug2Format(&e);
-                    panic!("[adv] error: {:?}", e);
+                    warn!("[adv] advertise error: {:?}", defmt::Debug2Format(&_e));
                 }
             }
         }
-    })
-    .await;
-}
+    };
 
-/// This is a background task that is required to run forever alongside any other BLE tasks.
-///
-/// ## Alternative
-///
-/// If you didn't require this to be generic for your application, you could statically spawn this with i.e.
-///
-/// ```rust,ignore
-///
-/// #[embassy_executor::task]
-/// async fn ble_task(mut runner: Runner<'static, SoftdeviceController<'static>>) {
-///     runner.run().await;
-/// }
-///
-/// spawner.must_spawn(ble_task(runner));
-/// ```
-async fn ble_task<C: Controller, P: PacketPool>(mut runner: Runner<'_, C, P>) {
-    loop {
-        if let Err(e) = runner.run().await {
-            #[cfg(feature = "defmt")]
-            let e = defmt::Debug2Format(&e);
-            panic!("[ble_task] error: {:?}", e);
-        }
-    }
+    // Runner needs &mut self, so wrap it in an async block with a mutable binding.
+    let run_task = async move {
+        let mut r = runner;
+        let _ = r.run().await; // ignore result; runner never returns on success
+    };
+
+    join(run_task, adv_loop).await;
 }
 
 /// Stream Events until the connection closes.
 ///
 /// This function will handle the GATT events and process them.
 /// This is how we interact with read and write requests.
-async fn gatt_events_task<P: PacketPool>(
-    server: &Server<'_>,
-    conn: &GattConnection<'_, '_, P>,
+async fn gatt_events_task(
+    server: &Server<'static>,
+    conn: &GattConnection<'static, 'static, DefaultPacketPool>,
 ) -> Result<(), Error> {
     let temperature = server.cow_service.temperature;
     let reason = loop {
@@ -209,25 +219,17 @@ async fn advertise<'values, 'server, C: Controller>(
 /// This task will notify the connected central of a counter value every 2 seconds.
 /// It will also read the RSSI value every 2 seconds.
 /// and will stop when the connection is closed by the central or an error occurs.
-async fn custom_task<C: Controller, P: PacketPool>(
-    server: &Server<'_>,
-    conn: &GattConnection<'_, '_, P>,
-    stack: &Stack<'_, C, P>,
+async fn custom_task(
+    server: &Server<'static>,
+    conn: &GattConnection<'static, 'static, DefaultPacketPool>,
 ) {
     let mut tick: i8 = 0;
     let temperature = server.cow_service.temperature;
     loop {
         tick = tick.wrapping_add(1);
-        info!("[custom_task] notifying connection of tick {}", tick);
+        debug!("[custom_task] notifying connection of tick {}", tick);
         if temperature.notify(conn, &tick).await.is_err() {
             info!("[custom_task] error notifying connection");
-            break;
-        };
-        // read RSSI (Received Signal Strength Indicator) of the connection.
-        if let Ok(rssi) = conn.raw().rssi(stack).await {
-            info!("[custom_task] RSSI: {:?}", rssi);
-        } else {
-            info!("[custom_task] error getting RSSI");
             break;
         };
         Timer::after_secs(2).await;
