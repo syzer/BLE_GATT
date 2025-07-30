@@ -4,7 +4,18 @@ fn main() {
 
     // Get MAC address from environment variable
     let mac_str = std::env::var("MAC_ADDRESS").unwrap_or_else(|_| "ff:8f:1a:05:e4:ff".to_string());
-    println!("cargo:rustc-env=MAC_ADDRESS={mac_str}");
+
+    // Reverse the MAC address string
+    // don't blame the player, blame the game
+    let reversed_mac_str = mac_str
+        .split(':')
+        .collect::<Vec<&str>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<&str>>()
+        .join(":");
+
+    println!("cargo:rustc-env=MAC_ADDRESS={reversed_mac_str}");
 
     linker_be_nice();
     println!("cargo:rustc-link-arg-tests=-Tembedded-test.x");
