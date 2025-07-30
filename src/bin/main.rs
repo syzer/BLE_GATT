@@ -21,12 +21,16 @@ use ssd1306::prelude::*;
 use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
 use ssd1306::Ssd1306;
+
 use trouble_host::prelude::ExternalController;
+
+use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
 
 extern crate alloc;
 
 use coa_gatt::mock::create_mock_display;
 use coa_gatt::task::{ble, display_task, DisplayWrapper};
+use coa_gatt::task::temp_task;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -78,10 +82,15 @@ async fn main(spawner: Spawner) {
     } else {
         DisplayWrapper::Real(real_disp)
     };
+    let controller: ExternalController<_, 20> = ExternalController::new(connector);
+    let tsens = TemperatureSensor::new(peripherals.TSENS, TsensConfig::default())
+        .expect("TSENS init failed");
 
     spawner.must_spawn(display_task(display_wrapper));
-    let controller: ExternalController<_, 20> = ExternalController::new(connector);
+    spawner
+        .must_spawn(temp_task(tsens));
 
     info!("Running BLE...");
+    // TODO as task
     ble::run(controller).await;
 }
