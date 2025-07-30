@@ -7,7 +7,10 @@ use defmt::info;
 use defmt::warn;
 
 // Include the generated file with MAC address
-include!(concat!(env!("OUT_DIR"), "/mac_address.rs"));
+// include!(concat!(env!("OUT_DIR"), "/mac_address.rs"));
+
+// const MAC_ADDRESS: [u8; 6] = [0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff];
+const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
 
 /// Max number of connections
 const CONNECTIONS_MAX: usize = 1;
@@ -38,8 +41,9 @@ pub async fn run<C>(controller: C)
 where
     C: Controller,
 {
-    // Use MAC address from the generated constant
-    let address = Address::from_bytes(MAC_ADDRESS);
+    info!("MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS: {:?}", MAC_ADDRESS);
+    // let address = Address::from_bytes(MAC_ADDRESS);
+    let address: Address = Address::random([0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff]);
     info!("COA MAC address = {:?}", address);
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
