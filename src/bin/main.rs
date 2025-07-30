@@ -7,7 +7,7 @@
 )]
 
 use defmt::{info, warn};
-use embassy_executor::{Spawner};
+use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
@@ -22,10 +22,11 @@ use ssd1306::prelude::*;
 use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
 use ssd1306::Ssd1306;
+use trouble_host::prelude::ExternalController;
 
 extern crate alloc;
 
-use coa_gatt::mock::{create_mock_display};
+use coa_gatt::mock::create_mock_display;
 use coa_gatt::task::{display_task, DisplayWrapper};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -41,7 +42,7 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    esp_alloc::heap_allocator!(size: 64 * 1024);
+    esp_alloc::heap_allocator!(size: 72 * 1024);
     // esp_alloc::heap_allocator!(size: 192 * 1024);
     // COEX needs more RAM - so we've added some more
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
@@ -57,7 +58,7 @@ async fn main(spawner: Spawner) {
         esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller");
     let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
-    let _connector = BleConnector::new(&wifi_init, peripherals.BT);
+    let connector = BleConnector::new(&wifi_init, peripherals.BT);
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -80,11 +81,8 @@ async fn main(spawner: Spawner) {
     };
 
     spawner.must_spawn(display_task(display_wrapper));
+    let controller: ExternalController<_, 20> = ExternalController::new(connector);
 
-    loop {
-        info!("Running main loop...");
-        Timer::after(Duration::from_secs(60)).await;
-    }
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
+    info!("Running BLE...");
+    ble::run(controller).await;
 }

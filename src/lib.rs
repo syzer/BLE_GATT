@@ -2,17 +2,14 @@
 
 extern crate alloc;
 
+pub mod ble;
 pub mod task;
 
 pub mod mock {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::cell::RefCell;
-    use embedded_graphics::{
-        pixelcolor::BinaryColor,
-        prelude::*,
-        geometry::OriginDimensions,
-    };
+    use embedded_graphics::{geometry::OriginDimensions, pixelcolor::BinaryColor, prelude::*};
     // No imports needed from ssd1306
 
     // Mock implementation of the display
@@ -86,14 +83,11 @@ pub mod mock {
 
 // Re-export the display task function for both main and testing
 pub mod display {
-    use embedded_graphics::{
-        mono_font::MonoTextStyle,
-        pixelcolor::BinaryColor,
-        prelude::*,
-        text::Text,
-    };
     use alloc::format;
     use alloc::string::String;
+    use embedded_graphics::{
+        mono_font::MonoTextStyle, pixelcolor::BinaryColor, prelude::*, text::Text,
+    };
 
     // Function to update the display with the given counter value
     pub fn update_display<D>(
@@ -112,9 +106,9 @@ pub mod display {
         // Determine which version of the speech bubble to display based on counter % 5
         let (first_line, second_line, third_line) = match counter % 5 {
             1 => ("B", "L", "E"), // 1st iteration: "BLE"
-            2 => (" ", " ", " "),    // 2nd iteration: "" (empty)
-            3 => ("B", " ", " "),   // 3rd iteration: "B"
-            4 => ("B", "L", " "),  // 4th iteration: "BL"
+            2 => (" ", " ", " "), // 2nd iteration: "" (empty)
+            3 => ("B", " ", " "), // 3rd iteration: "B"
+            4 => ("B", "L", " "), // 4th iteration: "BL"
             0 => ("B", "L", "E"), // 5th iteration: "BLE" (same as 1st)
             _ => unreachable!(),
         };
@@ -138,14 +132,22 @@ pub mod display {
                 line
             };
 
-            Text::new(display_line, Point::new(x_offset, y_offset + (i as i32 * 7)), text_style)
-                .draw(display)?;
+            Text::new(
+                display_line,
+                Point::new(x_offset, y_offset + (i as i32 * 7)),
+                text_style,
+            )
+            .draw(display)?;
         }
 
         // Create a string with the counter value at the bottom
         let counter_text: String = format!("Moo: {}s", counter);
-        Text::new(&counter_text, Point::new(x_offset, y_offset + 64), text_style)
-            .draw(display)?;
+        Text::new(
+            &counter_text,
+            Point::new(x_offset, y_offset + 64),
+            text_style,
+        )
+        .draw(display)?;
 
         Ok(())
     }
