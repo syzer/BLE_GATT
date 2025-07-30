@@ -22,19 +22,27 @@ const SERVICE_UUID: [u8; 16] = [
 // GATT Server definition
 #[gatt_server]
 struct Server {
-    battery_service: BatteryService,
+    cow_service: CowService,
 }
 
-/// Battery service
-#[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
-struct BatteryService {
-    /// Battery Level
-    #[descriptor(uuid = descriptors::VALID_RANGE, read, value = [0, 100])]
-    #[descriptor(uuid = descriptors::MEASUREMENT_DESCRIPTION, name = "hello", read, value = "Battery Level")]
-    #[characteristic(uuid = characteristic::BATTERY_LEVEL, read, notify, value = 10)]
-    level: u8,
-    #[characteristic(uuid = "408813df-5dd4-1f87-ec11-cdb001100000", write, read, notify)]
-    status: bool,
+/// Cow service
+#[gatt_service(uuid = "00000000-0000-0000-0000-fd2bcccb0000")]
+struct CowService {
+    /// Temperature in °C (int8)
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
+    temperature: i8,
+
+    /// Outbound ticket payloads (device → phone)
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000a", read, notify, value = [0; 20])]
+    get_tickets: [u8; 20],
+
+    /// Inbound ticket payloads (phone → device)
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", write)]
+    post_tickets: [u8; 20],
+
+    /// Login credentials sent from phone
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", write)]
+    post_login: [u8; 20],
 }
 
 /// Run the BLE stack.
@@ -119,22 +127,22 @@ async fn gatt_events_task<P: PacketPool>(
     server: &Server<'_>,
     conn: &GattConnection<'_, '_, P>,
 ) -> Result<(), Error> {
-    let level = server.battery_service.level;
+    let temperature = server.cow_service.temperature;
     let reason = loop {
         match conn.next().await {
             GattConnectionEvent::Disconnected { reason } => break reason,
             GattConnectionEvent::Gatt { event } => {
                 match &event {
                     GattEvent::Read(event) => {
-                        if event.handle() == level.handle {
-                            let value = server.get(&level);
-                            info!("[gatt] Read Event to Level Characteristic: {:?}", value);
+                        if event.handle() == temperature.handle {
+                            let value = server.get(&temperature);
+                            info!("[gatt] Read Event to Temperature Characteristic: {:?}", value);
                         }
                     }
                     GattEvent::Write(event) => {
-                        if event.handle() == level.handle {
+                        if event.handle() == temperature.handle {
                             info!(
-                                "[gatt] Write Event to Level Characteristic: {:?}",
+                                "[gatt] Write Event to Temperature Characteristic: {:?}",
                                 event.data()
                             );
                         }
@@ -206,12 +214,12 @@ async fn custom_task<C: Controller, P: PacketPool>(
     conn: &GattConnection<'_, '_, P>,
     stack: &Stack<'_, C, P>,
 ) {
-    let mut tick: u8 = 0;
-    let level = server.battery_service.level;
+    let mut tick: i8 = 0;
+    let temperature = server.cow_service.temperature;
     loop {
         tick = tick.wrapping_add(1);
         info!("[custom_task] notifying connection of tick {}", tick);
-        if level.notify(conn, &tick).await.is_err() {
+        if temperature.notify(conn, &tick).await.is_err() {
             info!("[custom_task] error notifying connection");
             break;
         };
