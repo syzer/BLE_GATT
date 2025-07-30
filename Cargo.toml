@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [features]
 default = ["esp32c3"]
+defmt = []
 esp32c3 = [
     "esp-bootloader-esp-idf/esp32c3",
     "esp-hal-embassy/esp32c3",

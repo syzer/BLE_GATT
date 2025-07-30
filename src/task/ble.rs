@@ -39,8 +39,8 @@ where
     C: Controller,
 {
     // Use MAC address from the generated constant
-    let address: Address = Address::random(MAC_ADDRESS);
-    info!("Our address = {:?}", address);
+    let address = Address::from_bytes(MAC_ADDRESS);
+    info!("COA MAC address = {:?}", address);
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
         HostResources::new();
