@@ -1,7 +1,6 @@
-#[no_std]
 use defmt::info;
 use embassy_time::Timer;
-use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
+use esp_hal::tsens::{TemperatureSensor};
 
 #[embassy_executor::task]
 pub async fn temp_task(tsens: TemperatureSensor<'static>) {

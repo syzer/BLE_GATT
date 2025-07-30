@@ -6,10 +6,6 @@ use trouble_host::prelude::*;
 use defmt::info;
 use defmt::warn;
 
-// Include the generated file with MAC address
-// include!(concat!(env!("OUT_DIR"), "/mac_address.rs"));
-
-// const MAC_ADDRESS: [u8; 6] = [0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff];
 const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
 
 /// Max number of connections
@@ -17,6 +13,11 @@ const CONNECTIONS_MAX: usize = 1;
 
 /// Max number of L2CAP channels.
 const L2CAP_CHANNELS_MAX: usize = 2; // Signal + att
+
+const SERVICE_UUID: [u8; 16] = [
+    0xFD, 0x2B, 0x44, 0x48, 0xAA, 0x0F, 0x4A, 0x15,
+    0xA6, 0x2F, 0xEB, 0x0B, 0xE7, 0x7A, 0x00, 0x00
+];
 
 // GATT Server definition
 #[gatt_server]
@@ -58,14 +59,14 @@ where
 
     info!("Starting advertising and GATT service");
     let server = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
-        name: "TrouBLE",
+        name: "COW GATT",
         appearance: &appearance::power_device::GENERIC_POWER_DEVICE,
     }))
     .unwrap();
 
     let _ = join(ble_task(runner), async {
         loop {
-            match advertise("Trouble Example", &mut peripheral, &server).await {
+            match advertise("COW Example", &mut peripheral, &server).await {
                 Ok(conn) => {
                     // set up tasks when the connection is established to a central, so they don't run when no one is connected.
                     let a = gatt_events_task(&server, &conn);
@@ -161,23 +162,35 @@ async fn advertise<'values, 'server, C: Controller>(
     server: &'server Server<'values>,
 ) -> Result<GattConnection<'values, 'server, DefaultPacketPool>, BleHostError<C::Error>> {
     let mut advertiser_data = [0; 31];
-    let len = AdStructure::encode_slice(
+
+    let len_adv = AdStructure::encode_slice(
         &[
             AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-            AdStructure::ServiceUuids16(&[[0x0f, 0x18]]),
-            AdStructure::CompleteLocalName(name.as_bytes()),
+            AdStructure::ServiceUuids128(&[SERVICE_UUID]),
         ],
         &mut advertiser_data[..],
     )?;
+
+    let mut scan_rsp_data = [0u8; 31];
+    let len_scan = AdStructure::encode_slice(
+        &[
+            AdStructure::CompleteLocalName(name.as_bytes()),
+            AdStructure::ManufacturerSpecificData { company_identifier: 0x0245, payload: &[] },
+        ],
+        &mut scan_rsp_data[..],
+    )?;
+
+
     let advertiser = peripheral
         .advertise(
             &Default::default(),
             Advertisement::ConnectableScannableUndirected {
-                adv_data: &advertiser_data[..len],
-                scan_data: &[],
+                adv_data: &advertiser_data[..len_adv],
+                scan_data: &scan_rsp_data[..len_scan],
             },
         )
         .await?;
+
     info!("[adv] advertising");
     let conn = advertiser.accept().await?.with_attribute_server(server)?;
     info!("[adv] connection established");
