@@ -58,9 +58,16 @@ mod tests {
         // without actually drawing to a display
 
         // Simply log that we would display cow ASCII art at these coordinates
-        info!("Would display cow ASCII art starting at ({}, {})", x_offset, y_offset);
+        info!(
+            "Would display cow ASCII art starting at ({}, {})",
+            x_offset, y_offset
+        );
         info!("Would display lines of cow ASCII art with BLE speech bubble at various y-offsets");
-        info!("Would display 'Moo: Xs' counter at ({}, {})", x_offset, y_offset + 64);
+        info!(
+            "Would display 'Moo: Xs' counter at ({}, {})",
+            x_offset,
+            y_offset + 64
+        );
 
         info!("OLED text display test passed");
     }

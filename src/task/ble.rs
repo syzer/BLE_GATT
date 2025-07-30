@@ -42,9 +42,7 @@ where
     C: Controller,
 {
     let parts = MAC_ADDRESS.split(":");
-    let hexes: heapless::Vec<u8, 6> = parts
-        .map(|f| u8::from_str_radix(f, 16).unwrap())
-        .collect();
+    let hexes: heapless::Vec<u8, 6> = parts.map(|f| u8::from_str_radix(f, 16).unwrap()).collect();
 
     let address = Address::random(hexes.into_array().unwrap());
     warn!("MAC address = {:?}", address);

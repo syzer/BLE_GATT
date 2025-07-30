@@ -82,8 +82,6 @@ pub mod mock {
 
 // Re-export the display task function for both main and testing
 pub mod display {
-    use alloc::format;
-    use alloc::string::String;
     use embedded_graphics::{
         mono_font::MonoTextStyle, pixelcolor::BinaryColor, prelude::*, text::Text,
     };
@@ -103,23 +101,49 @@ pub mod display {
         display.clear(BinaryColor::Off)?;
 
         // Determine which version of the speech bubble to display based on counter % 5
-        let (first_line, second_line, third_line) = match counter % 5 {
-            1 => ("B", "L", "E"), // 1st iteration: "BLE"
-            2 => (" ", " ", " "), // 2nd iteration: "" (empty)
-            3 => ("B", " ", " "), // 3rd iteration: "B"
-            4 => ("B", "L", " "), // 4th iteration: "BL"
-            0 => ("B", "L", "E"), // 5th iteration: "BLE" (same as 1st)
+        let cow_art = match counter % 5 {
+            1 => [
+                r"       ",
+                r"  ^__^",
+                r"B (oo)\____",
+                r"L (__)\       )\/\",
+                r"E     ||--w ||",
+                r"      ||       ||",
+            ], // 1st iteration: "BLE"
+            2 => [
+                r"       ",
+                r"  ^__^",
+                r"  (oo)\____",
+                r"  (__)\       )\/\",
+                r"       ||--w ||",
+                r"      ||       ||",
+            ], // 2nd iteration: "" (empty)
+            3 => [
+                r"       ",
+                r"  ^__^",
+                r"B (oo)\____",
+                r"  (__)\       )\/\",
+                r"       ||--w ||",
+                r"      ||       ||",
+            ], // 3rd iteration: "B"
+            4 => [
+                r"       ",
+                r"  ^__^",
+                r"B (oo)\____",
+                r"L (__)\       )\/\",
+                r"       ||--w ||",
+                r"      ||       ||",
+            ], // 4th iteration: "BL"
+            0 => [
+                r"       ",
+                r"  ^__^",
+                r"B (oo)\____",
+                r"L (__)\       )\/\",
+                r"E     ||--w ||",
+                r"      ||       ||",
+            ], // 5th iteration: "BLE" (same as 1st)
             _ => unreachable!(),
         };
-
-        let cow_art = [
-            r"       ",
-            r"  ^__^",
-            &format!("{} (oo)\\____", first_line),
-            &format!("{} (__)\\       )\\/\\", second_line),
-            &format!("{}     ||--w ||", third_line),
-            r"      ||       ||",
-        ];
 
         // Draw the cow ASCII art with smaller vertical spacing
         for (i, line) in cow_art.iter().enumerate() {
@@ -128,7 +152,7 @@ pub mod display {
             let display_line = if i == 2 && counter % 10 == 0 {
                 "B (X.)\\____"
             } else {
-                line
+                *line
             };
 
             Text::new(
@@ -138,15 +162,6 @@ pub mod display {
             )
             .draw(display)?;
         }
-
-        // Create a string with the counter value at the bottom
-        let counter_text: String = format!("Moo: {}s", counter);
-        Text::new(
-            &counter_text,
-            Point::new(x_offset, y_offset + 64),
-            text_style,
-        )
-        .draw(display)?;
 
         Ok(())
     }
