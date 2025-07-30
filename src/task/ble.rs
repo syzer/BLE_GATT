@@ -41,9 +41,17 @@ pub async fn run<C>(controller: C)
 where
     C: Controller,
 {
-    info!("MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS: {:?}", MAC_ADDRESS);
-    // let address = Address::from_bytes(MAC_ADDRESS);
-    let address: Address = Address::random([0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff]);
+    info!(
+        "MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS MAC_ADDRESS: {:?}",
+        MAC_ADDRESS
+    );
+
+    let parts = MAC_ADDRESS.split(":");
+    let hexes: heapless::Vec<u8, 6> = parts.map(|f| f.parse::<u8>().unwrap()).collect();
+
+    info!("{:?}", hexes);
+    let address = Address::random(hexes.into_array().unwrap());
+    //let address: Address = Address::random([0xff, 0x8f, 0x1a, 0x05, 0xe4, 0xff]);
     info!("COA MAC address = {:?}", address);
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =

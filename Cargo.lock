@@ -136,6 +136,7 @@ dependencies = [
  "esp-hal-embassy",
  "esp-rom-sys",
  "esp-wifi",
+ "heapless",
  "panic-rtt-target",
  "rtt-target",
  "smoltcp",
