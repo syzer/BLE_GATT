@@ -1,6 +1,7 @@
 # COA-GATT-bleps for ESP32-C3/C6 with OLED
 
 This project is for the ESP32-C3 and ESP32-C6 microcontrollers with an SSD1306 OLED display. It uses Rust and the Embassy async runtime.
+![Picture](./Picture.jpg)
 
 # Power draft 
 ## ESP32C3
