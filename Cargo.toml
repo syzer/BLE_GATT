@@ -86,9 +86,8 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
     "socket-udp",
 ] }
 static_cell = { version = "2.1.1" }
-trouble-host = { version = "0.2.4", features = ["derive", "defmt"] }
+bleps = { git = "https://github.com/bjoernQ/bleps", features = ["defmt", "async", "macros"] }
 embassy-futures = { version = "0.1.1", features = ["defmt"] }
-trouble-host-macros = "0.2.0"
 embassy-sync = { version = "0.7.0", features = ["defmt"] }
 heapless = { version = "0.8.0", features = ["defmt-03"] }
 

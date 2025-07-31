@@ -1,8 +1,7 @@
 use embassy_futures::select::select;
-use embassy_futures::join::join;
 use embassy_time::Timer;
-use trouble_host::prelude::*;
 use heapless::Vec;
+use core::cell::RefCell;
 
 use embassy_executor::Spawner;
 use embassy_executor::task;
@@ -13,233 +12,165 @@ use defmt::warn;
 use defmt::debug;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use esp_wifi::ble::controller::BleConnector;
+
+use bleps::{
+    ad_structure::{
+        AdStructure,
+        BR_EDR_NOT_SUPPORTED,
+        LE_GENERAL_DISCOVERABLE,
+        create_advertising_data,
+    },
+    async_attribute_server::AttributeServer,
+    asynch::Ble,
+    attribute_server::NotificationData,
+    gatt,
+};
 
 const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
 
-/// Max number of connections
-const CONNECTIONS_MAX: usize = 2;
+// Service UUID: FD2B4448-AA0F-4A15-A62F-EB0BE77A0000
+// PostLogin UUID: 00000000-0000-0000-0000-fd2bcccb0006
 
-/// Max number of L2CAP channels.
-const L2CAP_CHANNELS_MAX: usize = 3; // Signal + att
+// We'll define our GATT service using the bleps gatt! macro
+// This will be used in the run function
 
-const SERVICE_UUID: [u8; 16] = [
-    0xFD, 0x2B, 0x44, 0x48, 0xAA, 0x0F, 0x4A, 0x15,
-    0xA6, 0x2F, 0xEB, 0x0B, 0xE7, 0x7A, 0x00, 0x00
-];
-
-// GATT Server definition
-#[gatt_server(connections_max = CONNECTIONS_MAX)]
-struct Server {
-    cow_service: CowService,
-}
-
-/// Cow service
-// #[gatt_service(uuid = "00000000-0000-0000-0000-fd2bcccb0000")]
-#[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
-struct CowService {
-    /// Temperature in °C (int8) // Temperature
-    #[descriptor(uuid = descriptors::MEASUREMENT_DESCRIPTION, read, value = "Temperature")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
-    temperature: i8,
-
-    /// Outbound ticket payloads (device → phone) // GetTickets
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "GetTickets", read, value = "GetTickets")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000a", read, notify, value = [0; 20])]
-    get_tickets: [u8; 20],
-
-    /// Inbound ticket payloads (phone → device) // PostTickets
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "PostTickets", read, value = "PostTickets")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", write)]
-    post_tickets:Vec<u8, 128>,
-
-    /// Login credentials sent from phone // PostLogin
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0006", name = "PostLogin", read, value = "PostLogin")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", write)]
-    post_login: [u8; 20],
-}
+// Define static temperature value
+static mut TEMPERATURE: i8 = 0;
 
 /// Run the BLE stack.
-pub async fn run<C>(controller: C, _spawner: &Spawner, TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>)
-where
-    C: Controller + 'static,
+pub async fn run(controller: esp_wifi::ble::controller::BleConnector<'_>, _spawner: &Spawner, TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>)
 {
     let parts = MAC_ADDRESS.split(":");
     let hexes: heapless::Vec<u8, 6> = parts.map(|f| u8::from_str_radix(f, 16).unwrap()).collect();
 
-    let address = Address::random(hexes.into_array().unwrap());
-    warn!("MAC address = {:?}", address);
+    warn!("MAC address = {:?}", hexes);
 
-    // Put the HostResources in a Box and leak it so it is &'static mut
-    let resources: &'static mut HostResources<
-        DefaultPacketPool,
-        CONNECTIONS_MAX,
-        L2CAP_CHANNELS_MAX,
-    > = Box::leak(Box::new(HostResources::new()));
+    // Create a timestamp function
+    let now = || esp_hal::time::Instant::now().duration_since_epoch().as_millis();
 
-    // Stack builder must also live for 'static because GattConnection
-    // holds references into it.
-    let stack_builder = trouble_host::new(controller, resources).set_random_address(address);
-    let stack_builder: &'static mut _ = Box::leak(Box::new(stack_builder));
+    // Initialize BLE
+    let mut ble = Ble::new(controller, now);
+    info!("BLE connector created");
 
-    let Host {
-        mut peripheral,
-        runner,
-        ..
-    } = stack_builder.build();
+    // Temperature value reference
+    let temp_ref = RefCell::new(0i8);
+    let temp_ref = &temp_ref;
 
-    info!("Starting advertising and GATT service");
-    let server = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
-        name: "COW GATT",
-        appearance: &appearance::access_control::GENERIC_ACCESS_CONTROL,
-    }))
-    .unwrap();
-
-    // Leak the server so spawned tasks can hold a 'static reference to it
-    let server: &'static Server = Box::leak(Box::new(server));
-
-    #[task(pool_size = CONNECTIONS_MAX)]
-    async fn connection_task(
-        server: &'static Server<'static>,
-        conn: GattConnection<'static, 'static, DefaultPacketPool>,
-        TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>,
-    ) {
-        select(
-            gatt_events_task(server, &conn),
-            custom_task(server, &conn, TEMP_C),
-        )
-        .await;
+    // Initialize BLE
+    info!("Initializing BLE...");
+    match ble.init().await {
+        Ok(_) => info!("BLE initialized successfully"),
+        Err(e) => {
+            warn!("BLE initialization error: {:?}", e);
+            return;
+        }
     }
 
-    let adv_loop = async {
-        loop {
-            match advertise("COW GATT", &mut peripheral, server).await {
-                Ok(conn) => {
-                    _spawner.must_spawn(connection_task(server, conn, &TEMP_C));
-                }
-                Err(_e) => {
-                    #[cfg(feature = "defmt")]
-                    warn!("[adv] advertise error: {:?}", defmt::Debug2Format(&_e));
-                }
-            }
+    // Set advertising parameters
+    info!("Setting advertising parameters...");
+    match ble.cmd_set_le_advertising_parameters().await {
+        Ok(_) => info!("Advertising parameters set successfully"),
+        Err(e) => {
+            warn!("Failed to set advertising parameters: {:?}", e);
+            return;
         }
-    };
+    }
 
-    // Runner needs &mut self, so wrap it in an async block with a mutable binding.
-    let run_task = async move {
-        let mut r = runner;
-        let _ = r.run().await; // ignore result; runner never returns on success
-    };
-
-    join(run_task, adv_loop).await;
-}
-
-/// Stream Events until the connection closes.
-///
-/// This function will handle the GATT events and process them.
-/// This is how we interact with read and write requests.
-async fn gatt_events_task(
-    server: &Server<'static>,
-    conn: &GattConnection<'static, 'static, DefaultPacketPool>,
-) -> Result<(), Error> {
-    let temperature = server.cow_service.temperature;
-    let reason = loop {
-        match conn.next().await {
-            GattConnectionEvent::Disconnected { reason } => break reason,
-            GattConnectionEvent::Gatt { event } => {
-                match &event {
-                    GattEvent::Read(event) => {
-                        if event.handle() == temperature.handle {
-                            let value = server.get(&temperature);
-                            info!("[gatt] Read Event to Temperature Characteristic: {:?}", value);
-                        }
-                    }
-                    GattEvent::Write(event) => {
-                        if event.handle() == temperature.handle {
-                            info!(
-                                "[gatt] Write Event to Temperature Characteristic: {:?}",
-                                event.data()
-                            );
-                        }
-                    }
-                    _ => {}
-                };
-                // This step is also performed at drop(), but writing it explicitly is necessary
-                // in order to ensure reply is sent.
-                match event.accept() {
-                    Ok(reply) => reply.send().await,
-                    Err(e) => warn!("[gatt] error sending response: {:?}", e),
-                };
-            }
-            _ => {} // ignore other Gatt Connection Events
-        }
-    };
-    info!("[gatt] disconnected: {:?}", reason);
-    Ok(())
-}
-
-/// Create an advertiser to use to connect to a BLE Central, and wait for it to connect.
-async fn advertise<'values, 'server, C: Controller>(
-    name: &'values str,
-    peripheral: &mut Peripheral<'values, C, DefaultPacketPool>,
-    server: &'server Server<'values>,
-) -> Result<GattConnection<'values, 'server, DefaultPacketPool>, BleHostError<C::Error>> {
-    let mut advertiser_data = [0; 31];
-
-    let len_adv = AdStructure::encode_slice(
-        &[
+    // Set advertising data
+    info!("Setting advertising data...");
+    match ble.cmd_set_le_advertising_data(
+        create_advertising_data(&[
             AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-            AdStructure::ServiceUuids128(&[SERVICE_UUID]),
-        ],
-        &mut advertiser_data[..],
-    )?;
+            AdStructure::CompleteLocalName("COW GATT"),
+        ]).unwrap()
+    ).await {
+        Ok(_) => info!("Advertising data set successfully"),
+        Err(e) => {
+            warn!("Failed to set advertising data: {:?}", e);
+            return;
+        }
+    }
 
-    let mut scan_rsp_data = [0u8; 31];
-    let len_scan = AdStructure::encode_slice(
-        &[
-            AdStructure::CompleteLocalName(name.as_bytes()),
-            AdStructure::ManufacturerSpecificData { company_identifier: 0x0245, payload: &[] },
-        ],
-        &mut scan_rsp_data[..],
-    )?;
+    // Enable advertising
+    info!("Enabling advertising...");
+    match ble.cmd_set_le_advertise_enable(true).await {
+        Ok(_) => info!("Advertising enabled successfully"),
+        Err(e) => {
+            warn!("Failed to enable advertising: {:?}", e);
+            return;
+        }
+    }
 
+    info!("Started advertising");
 
-    let advertiser = peripheral
-        .advertise(
-            &Default::default(),
-            Advertisement::ConnectableScannableUndirected {
-                adv_data: &advertiser_data[..len_adv],
-                scan_data: &scan_rsp_data[..len_scan],
+    // Define read and write handlers for characteristics
+    let mut temperature_read = |_offset: usize, data: &mut [u8]| {
+        data[0] = unsafe { TEMPERATURE } as u8;
+        1
+    };
+
+    let mut post_login_read = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(b"Login");
+        5
+    };
+
+    let mut post_login_write = |offset: usize, data: &[u8]| {
+        if let Ok(txt) = core::str::from_utf8(data) {
+            info!("[gatt] PostLogin JSON: {}", txt);
+            // TODO: parse JSON and push to queue if needed
+        } else {
+            warn!("[gatt] PostLogin not UTF‑8: {:?}", data);
+        }
+    };
+
+    // Define GATT service and characteristics
+    gatt!([service {
+        uuid: "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000",
+        characteristics: [
+            characteristic {
+                name: "temperature",
+                uuid: "00000000-0000-0000-0000-fd2bcccb0001",
+                read: temperature_read,
+                notify: true,
             },
-        )
-        .await?;
+            characteristic {
+                name: "post_login",
+                uuid: "00000000-0000-0000-0000-fd2bcccb0006",
+                read: post_login_read,
+                write: post_login_write,
+                notify: true,
+            },
+        ],
+    },]);
 
-    info!("[adv] advertising");
-    let conn = advertiser.accept().await?.with_attribute_server(server)?;
-    info!("[adv] connection established");
-    Ok(conn)
-}
+    // Create attribute server
+    let mut rng = bleps::no_rng::NoRng;
+    let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes, &mut rng);
 
-/// Example task to use the BLE notifier interface.
-/// This task will notify the connected central of a counter value every 2 seconds.
-/// It will also read the RSSI value every 2 seconds.
-/// and will stop when the connection is closed by the central or an error occurs.
-async fn custom_task(
-    server: &Server<'static>,
-    conn: &GattConnection<'static, 'static, DefaultPacketPool>,
-    TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>,
-) {
-    let mut tick: i8 = 0;
-    let temperature = server.cow_service.temperature;
-    loop {
-        tick = tick.wrapping_add(1);
-        let c = TEMP_C.wait().await;           // blocks until new value
-        debug!("[custom_task] notifying connection of tick {}", tick);
-        info!("[custom_task] notifying connection of temp {}", c);
-        if temperature.notify(conn, &c).await.is_err() {
-            warn!("[custom_task] error notifying connection");
-            break;
-        };
-        Timer::after_secs(2).await;
+    // Create a notifier for temperature updates
+    let mut notifier = || {
+        async {
+            // Wait for temperature update
+            let temp = TEMP_C.wait().await;
+
+            // Update the static temperature value
+            unsafe { TEMPERATURE = temp; }
+
+            // Create notification data
+            let mut data = [0u8; 1];
+            data[0] = temp as u8;
+
+            info!("Notifying temperature: {}", temp);
+            // Use the handle for the temperature characteristic
+            // The handle is 3 for the first characteristic (service handle is 1, service value is 2, characteristic is 3)
+            NotificationData::new(3, &data)
+        }
+    };
+
+    // Run the attribute server
+    info!("Running BLE attribute server...");
+    match srv.run(&mut notifier).await {
+        Ok(_) => info!("BLE attribute server completed"),
+        Err(_) => warn!("BLE attribute server error"),
     }
 }

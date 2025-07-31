@@ -22,7 +22,7 @@ use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
 use ssd1306::Ssd1306;
 
-use trouble_host::prelude::ExternalController;
+// Removed trouble_host import
 
 use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
@@ -99,7 +99,6 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    let controller: ExternalController<_, 20> = ExternalController::new(connector);
     info!("Running BLE...");
-    ble::run(controller, &spawner, &TEMP_C).await;
+    ble::run(connector, &spawner, &TEMP_C).await;
 }
