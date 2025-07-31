@@ -25,6 +25,8 @@ use ssd1306::Ssd1306;
 use trouble_host::prelude::ExternalController;
 
 use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+static TEMP_C: Signal<CriticalSectionRawMutex, i8> = Signal::new();
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -86,16 +88,18 @@ async fn main(spawner: Spawner) {
     } else {
         DisplayWrapper::Real(real_disp)
     };
-    let controller: ExternalController<_, 20> = ExternalController::new(connector);
-    let tsens = TemperatureSensor::new(peripherals.TSENS, TsensConfig::default())
-        .expect("TSENS init failed");
-
     spawner.must_spawn(display_task(display_wrapper));
-    spawner
-        .must_spawn(temp_task(tsens));
 
+    // spawn temperature sensor task
+    match TemperatureSensor::new(peripherals.TSENS, TsensConfig::default()) {
+        Ok(tsens) => spawner.must_spawn(temp_task(tsens, &TEMP_C)),
+        Err(_e) => {
+            #[cfg(feature = "defmt")]
+            warn!("TSENS init failed, disabling temp task: {:?}", defmt::Debug2Format(&_e));
+        }
+    }
+
+    let controller: ExternalController<_, 20> = ExternalController::new(connector);
     info!("Running BLE...");
-    // TODO as task and remove spawner
-    ble::run(controller, &spawner).await;
-
+    ble::run(controller, &spawner, &TEMP_C).await;
 }

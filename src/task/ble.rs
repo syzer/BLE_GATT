@@ -2,6 +2,7 @@ use embassy_futures::select::select;
 use embassy_futures::join::join;
 use embassy_time::Timer;
 use trouble_host::prelude::*;
+use heapless::Vec;
 
 use embassy_executor::Spawner;
 use embassy_executor::task;
@@ -10,6 +11,9 @@ use alloc::boxed::Box;
 use defmt::info;
 use defmt::warn;
 use defmt::debug;
+
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use esp_wifi::ble::controller::BleConnector;
 
 const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
 
@@ -35,7 +39,7 @@ struct Server {
 #[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
 struct CowService {
     /// Temperature in °C (int8) // Temperature
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0001", name = "Temperature", read, value = "Temperature")]
+    #[descriptor(uuid = descriptors::MEASUREMENT_DESCRIPTION, read, value = "Temperature")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
     temperature: i8,
 
@@ -47,7 +51,7 @@ struct CowService {
     /// Inbound ticket payloads (phone → device) // PostTickets
     #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "PostTickets", read, value = "PostTickets")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", write)]
-    post_tickets: [u8; 20],
+    post_tickets:Vec<u8, 128>,
 
     /// Login credentials sent from phone // PostLogin
     #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0006", name = "PostLogin", read, value = "PostLogin")]
@@ -56,7 +60,7 @@ struct CowService {
 }
 
 /// Run the BLE stack.
-pub async fn run<C>(controller: C, _spawner: &Spawner)
+pub async fn run<C>(controller: C, _spawner: &Spawner, TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>)
 where
     C: Controller + 'static,
 {
@@ -98,10 +102,11 @@ where
     async fn connection_task(
         server: &'static Server<'static>,
         conn: GattConnection<'static, 'static, DefaultPacketPool>,
+        TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>,
     ) {
         select(
             gatt_events_task(server, &conn),
-            custom_task(server, &conn),
+            custom_task(server, &conn, TEMP_C),
         )
         .await;
     }
@@ -110,7 +115,7 @@ where
         loop {
             match advertise("COW GATT", &mut peripheral, server).await {
                 Ok(conn) => {
-                    _spawner.must_spawn(connection_task(server, conn));
+                    _spawner.must_spawn(connection_task(server, conn, &TEMP_C));
                 }
                 Err(_e) => {
                     #[cfg(feature = "defmt")]
@@ -222,14 +227,17 @@ async fn advertise<'values, 'server, C: Controller>(
 async fn custom_task(
     server: &Server<'static>,
     conn: &GattConnection<'static, 'static, DefaultPacketPool>,
+    TEMP_C: &'static Signal<CriticalSectionRawMutex, i8>,
 ) {
     let mut tick: i8 = 0;
     let temperature = server.cow_service.temperature;
     loop {
         tick = tick.wrapping_add(1);
+        let c = TEMP_C.wait().await;           // blocks until new value
         debug!("[custom_task] notifying connection of tick {}", tick);
-        if temperature.notify(conn, &tick).await.is_err() {
-            info!("[custom_task] error notifying connection");
+        info!("[custom_task] notifying connection of temp {}", c);
+        if temperature.notify(conn, &c).await.is_err() {
+            warn!("[custom_task] error notifying connection");
             break;
         };
         Timer::after_secs(2).await;
