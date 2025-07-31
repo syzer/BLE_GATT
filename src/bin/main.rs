@@ -5,6 +5,7 @@
     reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
     holding buffers for the duration of a data transfer."
 )]
+#![feature(type_alias_impl_trait)]
 
 use defmt::{info, warn};
 use embassy_executor::Spawner;
@@ -15,8 +16,8 @@ use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_wifi::ble::controller::BleConnector;
 use panic_rtt_target as _;
-use ssd1306::I2CDisplayInterface;
 
+use ssd1306::I2CDisplayInterface;
 use ssd1306::prelude::*;
 use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
@@ -57,11 +58,15 @@ async fn main(spawner: Spawner) {
 
     let rng = esp_hal::rng::Rng::new(peripherals.RNG);
     let timer1 = TimerGroup::new(peripherals.TIMG0);
-    let wifi_init =
-        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller");
-    let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
+    let wifi_init = esp_wifi::init(timer1.timer0, rng)
+        .expect("Failed to initialize WIFI/BLE controller");
+
+    // Move into a compile‑time static without naming the type
+    let wifi_init = static_cell::make_static!(wifi_init);
+    let (mut _wifi_controller, _interfaces) =
+        esp_wifi::wifi::new(wifi_init, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
-    let connector = BleConnector::new(&wifi_init, peripherals.BT);
+    let connector = BleConnector::new(wifi_init, peripherals.BT);
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -75,7 +80,7 @@ async fn main(spawner: Spawner) {
     let mut real_disp = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
 
-    // Try to initialize the real display, use mock display if it fails
+    // spawn display task
     let display_wrapper = if real_disp.init().is_err() {
         warn!("Failed to initialize display, using mock display instead");
         DisplayWrapper::Mock(create_mock_display())
@@ -83,14 +88,20 @@ async fn main(spawner: Spawner) {
         DisplayWrapper::Real(real_disp)
     };
     let controller: ExternalController<_, 20> = ExternalController::new(connector);
-    let tsens = TemperatureSensor::new(peripherals.TSENS, TsensConfig::default())
-        .expect("TSENS init failed");
+
+    // spawn temperature sensor task
+    match TemperatureSensor::new(peripherals.TSENS, TsensConfig::default()) {
+        Ok(tsens) => spawner.must_spawn(temp_task(tsens)),
+        Err(_e) => {
+            #[cfg(feature = "defmt")]
+            warn!("TSENS init failed, disabling temp task: {:?}", defmt::Debug2Format(&_e));
+        }
+    }
 
     spawner.must_spawn(display_task(display_wrapper));
-    spawner
-        .must_spawn(temp_task(tsens));
 
     info!("Running BLE...");
-    // TODO as task
-    ble::run(controller).await;
+    // TODO as task and remove spawner
+    ble::run(controller, &spawner).await;
+
 }

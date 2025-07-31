@@ -1,4 +1,4 @@
-use defmt::{info, warn};
+use defmt::{warn, debug};
 use embassy_executor::task;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::mono_font::ascii::FONT_6X9;
@@ -67,8 +67,8 @@ pub async fn display_task(mut disp: DisplayWrapper) {
             }
         }
 
-        info!("Display updated with counter: {}", counter);
+        debug!("Display updated with counter: {}", counter);
         counter += 1;
-        Timer::after(Duration::from_secs(1)).await;
+        Timer::after(Duration::from_secs(2)).await;
     }
 }
