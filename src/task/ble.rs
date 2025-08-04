@@ -81,7 +81,7 @@ pub async fn run(controller: esp_wifi::ble::controller::BleConnector<'_>, _spawn
     match ble.cmd_set_le_advertising_data(
         create_advertising_data(&[
             AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-            AdStructure::CompleteLocalName("COW GATT"),
+            AdStructure::CompleteLocalName("COW2GATT"),
         ]).unwrap()
     ).await {
         Ok(_) => info!("Advertising data set successfully"),
