@@ -2,7 +2,6 @@ use embassy_futures::select::select;
 use embassy_futures::join::join;
 use embassy_time::Timer;
 use trouble_host::prelude::*;
-use heapless::Vec;
 
 use embassy_executor::Spawner;
 use embassy_executor::task;
@@ -16,6 +15,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use esp_wifi::ble::controller::BleConnector;
 
 const MAC_ADDRESS: &str = env!("MAC_ADDRESS");
+const GATT_NAME: &str = env!("GATT_NAME");
 
 /// Max number of connections
 const CONNECTIONS_MAX: usize = 2;
@@ -39,23 +39,20 @@ struct Server {
 #[gatt_service(uuid = "FD2B4448-AA0F-4A15-A62F-EB0BE77A0000")]
 struct CowService {
     /// Temperature in °C (int8) // Temperature
-    #[descriptor(uuid = descriptors::MEASUREMENT_DESCRIPTION, read, value = "Temperature")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
     temperature: i8,
 
     /// Outbound ticket payloads (device → phone) // GetTickets
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "GetTickets", read, value = "GetTickets")]
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000a", read, notify, value = [0; 20])]
     get_tickets: [u8; 20],
 
     /// Inbound ticket payloads (phone → device) // PostTickets
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb000a", name = "PostTickets", read, value = "PostTickets")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", write)]
-    post_tickets:Vec<u8, 128>,
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", read, write, value = [0; 20])]
+    post_tickets: [u8; 20],
 
     /// Login credentials sent from phone // PostLogin
-    #[descriptor(uuid = "00000000-0000-0000-0000-fd2bcccb0006", name = "PostLogin", read, value = "PostLogin")]
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", write)]
+    // #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, write, value = [0; 20])]
+    #[characteristic(uuid = "408813df-5dd4-1f87-ec11-cdb001100000", read, write, value = [0; 20])]
     post_login: [u8; 20],
 }
 
@@ -90,7 +87,7 @@ where
 
     info!("Starting advertising and GATT service");
     let server = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
-        name: "COW GATT",
+        name: GATT_NAME,
         appearance: &appearance::access_control::GENERIC_ACCESS_CONTROL,
     }))
     .unwrap();
@@ -142,19 +139,62 @@ async fn gatt_events_task(
     server: &Server<'static>,
     conn: &GattConnection<'static, 'static, DefaultPacketPool>,
 ) -> Result<(), Error> {
-    let temperature = server.cow_service.temperature;
+    let temperature   = server.cow_service.temperature;
+    let post_login    = server.cow_service.post_login;
+    let post_tickets  = server.cow_service.post_tickets;
     let reason = loop {
         match conn.next().await {
             GattConnectionEvent::Disconnected { reason } => break reason,
             GattConnectionEvent::Gatt { event } => {
                 match &event {
                     GattEvent::Read(event) => {
+                        if event.handle() == post_login.handle {
+                            let value = server.get(&post_login);
+                            info!("[gatt] Read Event to Post Login Characteristic: {:?}", value);
+                        } else if event.handle() == temperature.handle {
+                            let value = server.get(&temperature);
+                            info!("[gatt] Read Event to Temperature Characteristic: {:?}", value);
+                        } else if event.handle() == post_tickets.handle {
+                            let value = server.get(&post_tickets);
+                            info!("[gatt] Read Event to PostTickets Characteristic: {:?}", value);
+                        }
                         if event.handle() == temperature.handle {
                             let value = server.get(&temperature);
                             info!("[gatt] Read Event to Temperature Characteristic: {:?}", value);
                         }
                     }
                     GattEvent::Write(event) => {
+                        if event.handle() == post_login.handle {
+                            info!(
+                                "[gatt] Write Event to Post Login Characteristic: {:?}",
+                                event.data()
+                            );
+                            // Handle the login data here, e.g., store it or process it
+                        } else if event.handle() == temperature.handle {
+                            let raw = event.data();                       // &[u8]
+                            info!("[gatt] Write Event to Temperature Characteristic: {:?}", raw);
+
+                            if let Some(&byte) = raw.first() {
+                                let temp: i8 = byte as i8;                // convert to signed
+                                if let Err(e) = server.set(&temperature, &temp) {
+                                    warn!("[gatt] failed to update temperature: {:?}", e);
+                                }
+                            } else {
+                                warn!("[gatt] temperature write was empty");
+                            }
+                        } else if event.handle() == post_tickets.handle {
+                            let data = event.data();
+                            info!("[gatt] Write Event to PostTickets Characteristic: {:?}", data);
+
+                            // copy into fixed 20‑byte buffer (truncate if longer)
+                            let mut buf = [0u8; 20];
+                            let n = core::cmp::min(buf.len(), data.len());
+                            buf[..n].copy_from_slice(&data[..n]);
+
+                            if let Err(e) = server.set(&post_tickets, &buf) {
+                                warn!("[gatt] failed to update post_tickets: {:?}", e);
+                            }
+                        }
                         if event.handle() == temperature.handle {
                             info!(
                                 "[gatt] Write Event to Temperature Characteristic: {:?}",

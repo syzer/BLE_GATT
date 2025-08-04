@@ -3,7 +3,8 @@ fn main() {
     println!("cargo:rerun-if-changed=.env");
 
     // Get MAC address from environment variable
-    let mac_str = std::env::var("MAC_ADDRESS").unwrap_or_else(|_| "ff:8f:1a:05:e4:ff".to_string());
+    let mac_str = std::env::var("MAC_ADDRESS").unwrap_or_else(|_| "ff:8f:2a:05:e4:ff".to_string());
+    let gatt_name = std::env::var("GATT_NAME").expect("GATT_NAME should be defined in env");
 
     // Reverse the MAC address string
     // don't blame the player, blame the game
@@ -16,6 +17,7 @@ fn main() {
         .join(":");
 
     println!("cargo:rustc-env=MAC_ADDRESS={reversed_mac_str}");
+    println!("cargo:rustc-env=GATT_NAME={gatt_name}");
 
     linker_be_nice();
     println!("cargo:rustc-link-arg-tests=-Tembedded-test.x");
