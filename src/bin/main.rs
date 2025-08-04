@@ -26,7 +26,7 @@ use trouble_host::prelude::ExternalController;
 
 use esp_hal::tsens::{Config as TsensConfig, TemperatureSensor};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-static TEMP_C: Signal<CriticalSectionRawMutex, i8> = Signal::new();
+static TEMP_C: Signal<CriticalSectionRawMutex, u8> = Signal::new();
 
 extern crate alloc;
 use alloc::boxed::Box;

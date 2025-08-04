@@ -39,7 +39,7 @@ struct Server {
 struct CowService {
     /// Temperature in °C (int8) // Temperature
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0001", read, notify, value = 0)]
-    temperature: i8,
+    temperature: u8,
 
     /// Outbound ticket payloads (device → phone) // GetTickets
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000a", read, notify, value = [0; 20])]
@@ -49,15 +49,16 @@ struct CowService {
     #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb000b", read, write, value = [0; 20])]
     post_tickets: [u8; 20],
 
-    // TrouBLE characteristics that works
-    // #[characteristic(uuid = "408813df-5dd4-1f87-ec11-cdb001100000", read, write, value = [0; 20])]
     /// Login credentials sent from phone // PostLogin
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, write, notify, value = heapless::Vec::<u8, 128>::new())]
-    post_login: heapless::Vec<u8, 128>,
+    // #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, /*write,*/ notify, value = heapless::Vec::<u8, 128>::new())]
+    // #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, /*write,*/ notify, value = [0; 128])]
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, write, notify, value = [0; 128])]
+    // post_login: heapless::Vec<u8, 128>,
+    post_login: [u8; 128],
 }
 
 /// Run the BLE stack.
-pub async fn run<C>(controller: C, _spawner: &Spawner, temp_c: &'static Signal<CriticalSectionRawMutex, i8>)
+pub async fn run<C>(controller: C, _spawner: &Spawner, temp_c: &'static Signal<CriticalSectionRawMutex, u8>)
 where
     C: Controller + 'static,
 {
@@ -99,7 +100,7 @@ where
     async fn connection_task(
         server: &'static Server<'static>,
         conn: GattConnection<'static, 'static, DefaultPacketPool>,
-        temp_c: &'static Signal<CriticalSectionRawMutex, i8>,
+        temp_c: &'static Signal<CriticalSectionRawMutex, u8>, // TODO name this Signal
     ) {
         select(
             gatt_events_task(server, &conn),
@@ -140,7 +141,7 @@ async fn gatt_events_task(
     conn: &GattConnection<'static, 'static, DefaultPacketPool>,
 ) -> Result<(), Error> {
     let temperature   = server.cow_service.temperature;
-    let post_login    = &server.cow_service.post_login;
+    let post_login    = server.cow_service.post_login;
     let post_tickets  = server.cow_service.post_tickets;
     let reason = loop {
         match conn.next().await {
@@ -149,7 +150,7 @@ async fn gatt_events_task(
                 match &event {
                     GattEvent::Read(event) => {
                         if event.handle() == post_login.handle {
-                            let value = server.get(post_login);
+                            let value = server.get(&post_login);
                             info!("[gatt] Read Event to Post Login Characteristic: {:?}", value);
                         } else if event.handle() == temperature.handle {
                             let value = server.get(&temperature);
@@ -174,24 +175,34 @@ async fn gatt_events_task(
                             }
 
                             // Copy payload into a heapless Vec (truncate if >128)
-                            let mut vec = Vec::<u8, 128>::new();
-                            let _ = vec.extend_from_slice(data);
+                            // let mut vec = Vec::<u8, 128>::new();
+                            // let _ = vec.extend_from_slice(data);
+                            // let mut ack = [0u8; 128];
+                            // ack[0..7].copy_from_slice(b"200 OK");
 
-                            // Store the received JSON
-                            if let Err(e) = server.set(post_login, &vec) {
-                                warn!("[gatt] failed to store post_login: {:?}", e);
-                            }
 
                             // Send ACK "200" back to the phone
-                            let mut ack = Vec::<u8, 128>::new();
-                            let _ = ack.extend_from_slice(b"200");
-                            let _ = post_login.notify(conn, &ack).await;
+                            // let mut ack = Vec::<u8, 128>::new();
+                            // let _ = ack.extend_from_slice(b"200 OK");
+                            // let _ = post_login.write(&ack).await;;
+                            let mut ack = [0u8; 128];
+                            let s = b"200 OK /PostLogin";
+                            ack[..s.len()].copy_from_slice(s);
+
+
+                            // Store the received JSON
+                            if let Err(e) = server.set(&post_login, &ack) {
+                                warn!("[gatt] failed to store post_login: {:?}", e);
+                            }
+                            if post_login.notify(conn, &ack).await.is_err() {
+                                warn!("[gatt] failed to update post_login");
+                            }
+                            info!("Response ready: 200 OK");
                     } else if event.handle() == temperature.handle {
                             let raw = event.data();                       // &[u8]
                             info!("[gatt] Write Event to Temperature Characteristic: {:?}", raw);
 
-                            if let Some(&byte) = raw.first() {
-                                let temp: i8 = byte as i8;                // convert to signed
+                            if let Some(&temp) = raw.first() {
                                 if let Err(e) = server.set(&temperature, &temp) {
                                     warn!("[gatt] failed to update temperature: {:?}", e);
                                 }
@@ -283,10 +294,11 @@ async fn advertise<'values, 'server, C: Controller>(
 async fn custom_task(
     server: &Server<'static>,
     conn: &GattConnection<'static, 'static, DefaultPacketPool>,
-    temp_c: &'static Signal<CriticalSectionRawMutex, i8>,
+    temp_c: &'static Signal<CriticalSectionRawMutex, u8>,
 ) {
     let mut tick: i8 = 0;
     let temperature = server.cow_service.temperature;
+    let post_login = &server.cow_service.post_login;
     loop {
         tick = tick.wrapping_add(1);
         let c = temp_c.wait().await;           // blocks until new value
@@ -296,6 +308,20 @@ async fn custom_task(
             warn!("[custom_task] error notifying connection");
             break;
         };
+
+        // let mut ack = Vec::<u8, 128>::new();
+        // let _ = ack.extend_from_slice(b"200 OK");
+        let mut ack = [0u8; 128];
+        let s = b"200 OK /PostLogin";
+        ack[..s.len()].copy_from_slice(s);
+
+
+        // debug!("[custom_task] sending ack: {:?}", ack);
+        // if post_login.notify(conn, &ack).await.is_err() {
+        //     warn!("[post_login] error notifying connection");
+        //     break;
+        // };
+
         Timer::after_secs(2).await;
     }
 }
