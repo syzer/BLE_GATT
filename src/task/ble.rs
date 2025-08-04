@@ -2,6 +2,7 @@ use embassy_futures::select::select;
 use embassy_futures::join::join;
 use embassy_time::Timer;
 use trouble_host::prelude::*;
+use heapless::Vec;
 
 use embassy_executor::Spawner;
 use embassy_executor::task;
@@ -50,10 +51,9 @@ struct CowService {
 
     // TrouBLE characteristics that works
     // #[characteristic(uuid = "408813df-5dd4-1f87-ec11-cdb001100000", read, write, value = [0; 20])]
-    //  TODO heapless::Vec<u8, 20>
     /// Login credentials sent from phone // PostLogin
-    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, write, value = [0; 20])]
-    post_login: [u8; 20],
+    #[characteristic(uuid = "00000000-0000-0000-0000-fd2bcccb0006", read, write, notify, value = heapless::Vec::<u8, 128>::new())]
+    post_login: heapless::Vec<u8, 128>,
 }
 
 /// Run the BLE stack.
@@ -140,7 +140,7 @@ async fn gatt_events_task(
     conn: &GattConnection<'static, 'static, DefaultPacketPool>,
 ) -> Result<(), Error> {
     let temperature   = server.cow_service.temperature;
-    let post_login    = server.cow_service.post_login;
+    let post_login    = &server.cow_service.post_login;
     let post_tickets  = server.cow_service.post_tickets;
     let reason = loop {
         match conn.next().await {
@@ -149,7 +149,7 @@ async fn gatt_events_task(
                 match &event {
                     GattEvent::Read(event) => {
                         if event.handle() == post_login.handle {
-                            let value = server.get(&post_login);
+                            let value = server.get(post_login);
                             info!("[gatt] Read Event to Post Login Characteristic: {:?}", value);
                         } else if event.handle() == temperature.handle {
                             let value = server.get(&temperature);
@@ -164,16 +164,29 @@ async fn gatt_events_task(
                         }
                     }
                     GattEvent::Write(event) => {
+                        // TODO move to separate handler
                         if event.handle() == post_login.handle {
-                            info!(
-                                "[gatt] Write Event to Post Login Characteristic: {:?}",
-                                event.data()
-                            );
-                            // TODO move to separate route
-                            // server.set(&post_login, &[0x00])?;          // 0x00 = OK
-                            
-                            // Handle the login data here, e.g., store it or process it
-                        } else if event.handle() == temperature.handle {
+                            let data = event.data();
+                            if let Ok(s) = core::str::from_utf8(data) {
+                                info!("[gatt] PostLogin: {}", s);
+                            } else {
+                                info!("[gatt] PostLogin (raw): {:?}", data);
+                            }
+
+                            // Copy payload into a heapless Vec (truncate if >128)
+                            let mut vec = Vec::<u8, 128>::new();
+                            let _ = vec.extend_from_slice(data);
+
+                            // Store the received JSON
+                            if let Err(e) = server.set(post_login, &vec) {
+                                warn!("[gatt] failed to store post_login: {:?}", e);
+                            }
+
+                            // Send ACK "200" back to the phone
+                            let mut ack = Vec::<u8, 128>::new();
+                            let _ = ack.extend_from_slice(b"200");
+                            let _ = post_login.notify(conn, &ack).await;
+                    } else if event.handle() == temperature.handle {
                             let raw = event.data();                       // &[u8]
                             info!("[gatt] Write Event to Temperature Characteristic: {:?}", raw);
 
@@ -278,7 +291,7 @@ async fn custom_task(
         tick = tick.wrapping_add(1);
         let c = temp_c.wait().await;           // blocks until new value
         debug!("[custom_task] notifying connection of tick {}", tick);
-        info!("[custom_task] notifying connection of temp {}", c);
+        debug!("[custom_task] notifying connection of temp {}", c);
         if temperature.notify(conn, &c).await.is_err() {
             warn!("[custom_task] error notifying connection");
             break;
